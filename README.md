@@ -9,14 +9,17 @@
 ## 2. Prerequisites
 
 Supported Typical Configurations:
-  - Ubuntu 20.04 (Focal Fossa) + ROS 2 Humble (built from source)
 
-    Installation instructions: [ROS 2 Humble Official Installation Guide](https://docs.ros.org/en/humble/Installation/Alternatives/Ubuntu-Development-Setup.html)  
-    > 💡 Note: If using other Ubuntu versions (e.g., 22.04 or 24.04), please select the corresponding ROS 2 distribution and handle compatibility adjustments yourself.
+  - Ubuntu 22.04 (Jammy Jellyfish) + ROS2 Humble (pre-compiled installation)  
+    Installation guide: [ROS2 Humble Official Installation Guide](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html)
+
+  - Ubuntu 20.04 (Focal Fossa) + ROS2 Humble (built from source)  
+    Installation guide: [ROS2 Humble Official Installation Guide](https://docs.ros.org/en/humble/Installation/Alternatives/Ubuntu-Development-Setup.html)  
 
   - Ubuntu 20.04 (Focal Fossa) + ROS Noetic (pre-compiled installation)  
-  
-    Installation instructions: [ROS Noetic Official Installation Guide](https://wiki.ros.org/noetic/Installation/Ubuntu)
+    Installation guide: [ROS Noetic Official Installation Guide](https://wiki.ros.org/noetic/Installation/Ubuntu)
+
+> 💡 Note: If using other Ubuntu versions (e.g., 22.04 or 24.04), please select the corresponding ROS2 distribution and handle compatibility adjustments yourself.
 
 ## 3. Code Download
 
