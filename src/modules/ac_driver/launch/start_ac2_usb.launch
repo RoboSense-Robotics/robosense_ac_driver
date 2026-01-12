@@ -1,0 +1,177 @@
+<launch>
+  <!-- Launch ms_node -->
+  <node name="ms_node" pkg="ac_driver" type="ms_node" output="screen">
+    <!-- Add parameters or remappings here if needed -->
+    <!-- Device Input Interface Mode -->
+    <param name="device_interface" value="usb" />
+    <!-- Frame rate for image input, measured in frames per second -->
+    <param name="image_input_fps" value="15" />
+    <!-- Frame rate for IMU (Inertial Measurement Unit) input, measured in frames per second -->
+    <param name="imu_input_fps" value="200" />
+    <!-- Whether to enable JPEG image compression -->
+    <param name="enable_jpeg" value="true" />
+    <!-- Whether to enable image rectify -->
+    <param name="enable_rectify" value="true" />
+    <!-- Whether to enable image rectify compression -->
+    <param name="enable_rectify_jpeg" value="true" />
+    <!-- Whether to enable JPEG image compression quality -->
+    <param name="jpeg_quality" value="70" />
+    <!-- Whether add topic prefix -->
+    <param name="topic_prefix" value="" />
+    <!-- Whether Special Device Serial Number -->
+    <param name="serial_number" value="" />
+    <!-- Whether Special Device Number -->
+    <param name="gsml_device_number" value="/dev/video30" />
+    <!-- PointCloud Frame Id, default rslidar -->
+    <param name="point_frame_id" value="rslidar" />
+    <!-- AC1 Image Frame Id, default rslidar -->
+    <param name="ac1_image_frame_id" value="rslidar" />
+    <!-- AC2 Left Image Frame Id, default rslidar -->
+    <param name="ac2_left_image_frame_id" value="rslidar" />
+    <!-- AC2 Right Image Frame Id, default rslidar -->
+    <param name="ac2_right_image_frame_id" value="rslidar" />
+    <!-- IMU Frame Id, default rslidar -->
+    <param name="imu_frame_id" value="rslidar" />
+    <!--Wheter AC2 Angle Calib File from Device --> 
+    <param name ="enable_angle_and_device_calib_info_from_device" value="true" />
+    <!-- Whether AC2 calibration basic directory path -->
+    <param name="angle_calib_basic_dir_path" value="" />
+    <!-- Wether Enable AC2 Device Calib Info From Device Pripority -->
+    <param name="enable_device_calib_info_from_device_pripority" value="true" />
+    <!-- Whether AC2 image calibaration file path -->
+    <param name="device_calib_file_path" value="" />
+    <!-- Whether Enable Device Manager Debug Mode -->
+    <param name="device_manager_debug" value="false" />
+    <!-- Whether Use Lidar Clock -->
+    <param name="enable_use_lidar_clock" value="true" />
+    <!-- Whether Componsate ROS2 Message Timestamp: not support now !!! --> 
+    <param name="ros_stamp_compensate_ns" value="0" />
+    <!-- Wether Use Dense Points -->
+    <param name="enable_use_dense_points" value="false" />
+    <!-- Wether Use First Point Timestamp As PointCloud Frame Timestamp -->
+    <param name="enable_use_first_point_ts" value="true" />
+    <!-- Wether Enable PointCloud Split By Wave Number -->
+    <param name="enable_ac2_pointcloud_wave_split" value="false" />
+    <!-- Wether Enable ZeroCopy: Ros1 Must False !!! --> 
+    <param name="enable_ros2_zero_copy" value="false" />
+    <!-- Wether Output Timestamp Information To File -->
+    <param name="timestamp_output_dir_path" value="" />
+    <!-- Whether Output PointCloud By Ros -->
+    <param name="enable_pointcloud_send" value="true" />
+    <!-- Whether Output AC1 Image By Ros -->
+    <param name="enable_ac1_image_send" value="false" />
+    <!-- Whether Output Left Image By Ros -->
+    <param name="enable_ac2_left_image_send" value="true" />
+    <!-- Whether Output Right Image By Ros -->
+    <param name="enable_ac2_right_image_send" value="true" />
+    <!-- Whether Output Imu By Ros -->
+    <param name="enable_imu_send" value="true" />
+    <!-- Whether AC1 Crop Top -->
+    <param name="ac1_crop_top" value="0" />
+    <!-- Whether AC1 Crop Bottom -->
+    <param name="ac1_crop_bottom" value="0" />
+    <!-- Whether AC1 Crop Left -->
+    <param name="ac1_crop_left" value="0" />
+    <!-- Whether AC1 Crop Right -->
+    <param name="ac1_crop_right" value="0" />
+    <!-- Whether AC2 Left Crop Top -->
+    <param name="ac2_left_crop_top" value="0" />
+    <!-- Whether AC2 Left Crop Bottom -->
+    <param name="ac2_left_crop_bottom" value="240" />
+    <!-- Whether AC2 Left Crop Left -->
+    <param name="ac2_left_crop_left" value="320" />
+    <!-- Whether AC2 Left Crop Right -->
+    <param name="ac2_left_crop_right" value="0" />
+    <!-- Whether AC2 Right Crop Top -->
+    <param name="ac2_right_crop_top" value="0" />
+    <!-- Whether AC2 Right Crop Bottom -->
+    <param name="ac2_right_crop_bottom" value="240" />
+    <!-- Whether AC2 Right Crop Left -->
+    <param name="ac2_right_crop_left" value="320" />
+    <!-- Whether AC2 Right Crop Right -->
+    <param name="ac2_right_crop_right" value="0" />
+    <!-- Whether AC2 Enable Denoise -->
+    <param name="enable_denoise" value="false" />
+    <!-- Whether AC2 Enable Smooth -->
+    <param name="enable_smooth" value="false" />
+    <!-- Whether AC2 Enable dist_x_win_cfg -->
+    <param name="dist_x_win_cfg" value="1" />
+    <!-- Whether AC2 Enable dist_y_win_cfg -->
+    <param name="dist_y_win_cfg" value="1" />
+    <!-- Whether AC2 Enable dist_valid_thresholds_0 -->
+    <param name="dist_valid_thresholds_0" value="3" />
+    <!-- Whether AC2 Enable dist_valid_thresholds_1 -->
+    <param name="dist_valid_thresholds_1" value="3" />
+    <!-- Whether AC2 Enable dist_valid_thresholds_2 -->
+    <param name="dist_valid_thresholds_2" value="3" />
+    <!-- Whether AC2 Enable dist_valid_thresholds_3 -->
+    <param name="dist_valid_thresholds_3" value="2" />
+    <!-- Whether AC2 Enable dist_valid_thresholds_4 -->
+    <param name="dist_valid_thresholds_4" value="2" />
+    <!-- Whether AC2 max_process_distance -->
+    <param name="max_process_distance" value="65535" />
+    <!-- Whether AC2 min_process_distance -->
+    <param name="min_process_distance" value="0" />
+    <!-- Whether AC2 edge_kernel_size -->
+    <param name="edge_kernel_size" value="3" />
+    <!-- Whether AC2 enable_dilation_filter -->
+    <param name="enable_debloom" value="false" />
+    <!-- Whether AC2 search_range -->
+    <param name="search_range" value="3" />
+    <!-- Whether AC2 distance_diff_threshold --> 
+    <param name="distance_diff_threshold" value="50" /> 
+    <!-- Whether AC2 delete_intensity_threshold -->
+    <param name="delete_intensity_threshold" value="200" />
+    <!-- Whether AC2 edge_threshold_0 -->
+    <param name="edge_threshold_0" value="2000" />
+    <!-- Whether AC2 edge_threshold_1 -->
+    <param name="edge_threshold_1" value="200" />
+    <!-- Whether AC2 intensity_mutation_thresholds_0 -->
+    <param name="intensity_mutation_thresholds_0" value="50" />
+    <!-- Whether AC2 intensity_mutation_thresholds_1 -->
+    <param name="intensity_mutation_thresholds_1" value="36" />
+    <!-- Whether AC2 target_intensity_thresholds_0 -->
+    <param name="target_intensity_thresholds_0" value="10" />
+    <!-- Whether AC2 target_intensity_thresholds_1 -->
+    <param name="target_intensity_thresholds_1" value="45" />
+    <!-- Whether AC2 target_intensity_thresholds_2 -->
+    <param name="target_intensity_thresholds_2" value="100" />
+    <!-- Whether AC2 enable_detrail -->
+    <param name="enable_detrail" value="false" />
+    <!-- Whether AC2 fwhm_thresholds[0-3] -->
+    <param name="fwhm_threshold_0" value="95" />
+    <param name="fwhm_threshold_1" value="90" />
+    <param name="fwhm_threshold_2" value="85" />
+    <param name="fwhm_threshold_3" value="80" />
+    <!-- Whether AC2 edge_thresholds[0-2] -->
+    <param name="edge_thresholds_0" value="200" />
+    <param name="edge_thresholds_1" value="500" />
+    <param name="edge_thresholds_2" value="4000" />
+    <!-- Whether AC2 distance_thresholds[0-2] -->
+    <param name="distance_thresholds_0" value="600" />
+    <param name="distance_thresholds_1" value="1000" />
+    <param name="distance_thresholds_2" value="1500" />
+    <!-- Whether AC2 noise_thresholds[0-1] -->
+    <param name="noise_thresholds_0" value="15" />
+    <param name="noise_thresholds_1" value="200" />
+    <!-- Whether AC2 peak_value_threshold -->
+    <param name="peak_value_threshold" value="10" />
+    <!-- Whether AC2 distance_diff_threshold --> 
+    <param name="detrail_distance_diff_threshold" value="30" /> 
+    <!-- Whether AC2 enable_frame_filter -->
+    <param name="enable_frame_filter" value="false" />
+    <!-- Whether AC2 enable_save_raw_data -->
+    <param name="enable_save_raw_data" value="false" />
+    <!-- Whether AC2 smooth_frame_count -->
+    <param name="smooth_frame_count" value="5" />
+    <!-- Whether AC2 imu_motion_detect_frame_count -->
+    <param name="imu_motion_detect_frame_count" value="5" />
+    <!-- Whether AC2 imu_motion_threshold -->
+    <param name="imu_motion_threshold" value="3" />
+    <!-- Whether AC2 stationary_ratio -->
+    <param name="stationary_ratio" value="10" />
+  </node>
+
+  <!-- rviz -->
+  <node pkg="rviz" name="rviz" type="rviz" args="-d $(find ac_driver)/rviz/rviz.rviz" />
+</launch>
