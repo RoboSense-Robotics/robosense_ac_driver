@@ -18,9 +18,22 @@ Supported Typical Configurations:
   
     Installation instructions: [ROS Noetic Official Installation Guide](https://wiki.ros.org/noetic/Installation/Ubuntu)
 
-## 3. Permission Setup and Hardware Connection
+## 3. Code Download
 
-### 3.1 Permission Configuration
+This project includes Git submodules. Please clone the repository completely using the following commands:
+
+```bash
+# Clone the main repository (including submodules)
+git clone --recursive https://github.com/RoboSense-Robotics/robosense_ac_driver.git
+
+# If already cloned but submodules not initialized, update manually
+cd robosense_ac_driver
+git submodule update --init --recursive
+```
+
+## 4. Permission Setup and Hardware Connection
+
+### 4.1 Permission Configuration
 
 When connecting an AC1/AC2 sensor for the first time, USB device access permissions must be configured to avoid requiring root privileges when running the driver later.
 
@@ -35,7 +48,7 @@ This script installs udev rules that allow the current user to directly access t
 
 > 💡 After execution, simply unplug and replug the device for the changes to take effect, usually no system reboot is required. If the device is still not recognized, try restarting the udev service or rebooting your computer.
 
-### 3.2 Hardware Connection
+### 4.2 Hardware Connection
 
 The AC1/AC2 sensors generate large amounts of data and must be connected directly to a USB 3.0 (or higher) port on the host machine.
 
@@ -52,7 +65,7 @@ After connection, verify device recognition using `lsusb` You should see an entr
 >
 > For systems with a desktop environment, you may optionally install a graphical tool like `usbview`.
 
-## 4. Building ac_driver
+## 5. Building ac_driver
 
 Once prerequisites are met, proceed to build the `ac_driver`.
 
@@ -72,7 +85,7 @@ rm -rf build/ install/ log/  # (Optional) Clean previous build artifacts
 colcon build
 ```
 
-## 5. Running ac_driver
+## 6. Running ac_driver
 
 After successful compilation, you can launch the driver node.
 
@@ -96,7 +109,7 @@ source install/setup.bash
   ros2 launch ac_driver start_ac2_usb.launch.py
   ```
 
-## 6. Topic Name And Data Type 
+## 7. Topic Name And Data Type 
 
 - /rs_camera/color/image_raw                                         ->  sensor_msgs(::msg):::Image
 - /rs_camera/color/image_raw/compressed                  -> sensor_msgs(::msg)::CompressedImage  
