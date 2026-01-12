@@ -65,63 +65,94 @@ After connection, verify device recognition using `lsusb` You should see an entr
 >
 > For systems with a desktop environment, you may optionally install a graphical tool like `usbview`.
 
-## 5. Building ac_driver
+## 5. Build ac_driver
 
-Once prerequisites are met, proceed to build the `ac_driver`.
-
-1. Open a new terminal and navigate to the root directory of your workspace containing the `ac_driver` source code:
+Open a new terminal window and change the current directory to the root of your workspace containing the `ac_driver` source code:
 
 ```bash
 cd /your/workspace/robosense_ac_driver
 ```
 
-> 💡 Replace `/your/workspace` with your actual path.
+> 💡 Please replace `/your/workspace` with the actual path where your source code is stored.
 
-2. Load the ROS 2 Humble environment and build using `colcon`:
+After installing all prerequisites, choose the appropriate build method based on your ROS version.
+
+### ROS2
+
+Source the ROS2 environment and build using `colcon`:
 
 ```bash
 source /opt/ros/humble/setup.bash
-rm -rf build/ install/ log/  # (Optional) Clean previous build artifacts
+rm -rf build/ install/ log/  # (Optional) Clean previous build files
 colcon build
 ```
 
-## 6. Running ac_driver
+### ROS
 
-After successful compilation, you can launch the driver node.
-
-1. Setting Up the Runtime Environment
-
-Before launching the `ac_driver` node, load the environment variables generated during the build. Open a new terminal and run:
+Source the ROS environment and build using `catkin_make`:
 
 ```bash
-source install/setup.bash
+source /opt/ros/noetic/setup.bash
+rm -rf build/ devel/  # (Optional) Clean previous build files
+catkin_make
 ```
 
-2. Launching the Node
+## 6. Run ac_driver
+
+Once `ac_driver` has been successfully built, you can launch the node. Execute the corresponding command based on your ROS version.
+
+### ROS2
 
 - For AC1:
-  ```bash
-  ros2 launch ac_driver start_ac1.launch.py
-  ```
+```bash
+source install/setup.bash
+ros2 launch ac_driver start_ac1.launch.py
+```
 
 - For AC2:
-  ```bash
-  ros2 launch ac_driver start_ac2_usb.launch.py
-  ```
+```bash
+source install/setup.bash
+ros2 launch ac_driver start_ac2_usb.launch.py
+```
+
+### ROS
+
+- For AC1:
+```bash
+source devel/setup.bash
+roslaunch ac_driver start_ac1.launch
+```
+
+- For AC2:
+```bash
+source devel/setup.bash
+roslaunch ac_driver start_ac2_usb.launch
+```
 
 ## 7. Topic Name And Data Type 
 
-- /rs_camera/color/image_raw                                         ->  sensor_msgs(::msg):::Image
-- /rs_camera/color/image_raw/compressed                  -> sensor_msgs(::msg)::CompressedImage  
-- /rs_camera/rect/color/image_raw                                 -> sensor_msgs(::msg):::Image
-- /rs_camera/rect/color/image_raw/compressed          -> sensor_msgs(::msg)::CompressedImage 
-- /rs_camera/left/color/image_raw                                   ->  sensor_msgs(::msg):::Image 
-- /rs_camera/left/color/image_raw/compressed            -> sensor_msgs(::msg)::CompressedImage 
-- /rs_camera/left/rect/color/image_raw                           -> sensor_msgs(::msg):::Image
-- /rs_camera/left/rect/color/image_raw/compressed    ->  sensor_msgs(::msg)::CompressedImage 
-- /rs_camera/right/color/image_raw                                 -> sensor_msgs(::msg):::Image 
-- /rs_camera/right/color/image_raw/compressed          -> sensor_msgs(::msg)::CompressedImage  
-- /rs_camra/right/rect/color/image_raw                           -> sensor_msgs(::msg):::Image 
-- /rs_camera/right/rect/color/image_raw/compressed -> sensor_msgs(::msg)::CompressedImage  
-- /rs_lidar/points                                                                   -> sensor_msgs(::msg):::PointCloud2, 其中点云的frame_id为"rslidar"
-- /rs_imu                                                                                 -> sensor_msgs(::msg):::Imu  
+> 💡 Note: In the table below, each "Topic Type" row contains the ROS2 format first, followed by the ROS format.
+
+For AC1
+| Topic Name                                   | Topic Type                                                           | Description                      |
+|----------------------------------------------|----------------------------------------------------------------------|----------------------------------|
+| `/rs_camera/color/image_raw`                 | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Raw color camera image data |
+| `/rs_camera/color/image_raw/compressed`      | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of raw color camera image data |
+| `/rs_camera/rect/color/image_raw`            | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Rectified color camera image data |
+| `/rs_camera/rect/color/image_raw/compressed` | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of rectified color camera image data |
+| `/rs_lidar/points`                           | `sensor_msgs/msg/PointCloud2` <br> `sensor_msgs/PointCloud2`         | Point cloud data with frame_id as rslidar |
+| `/rs_imu`                                    | `sensor_msgs/msg/Imu` <br> `sensor_msgs/Imu`                         | IMU (Inertial Measurement Unit) data |
+
+For AC2
+| Topic Name                                         | Topic Type                                                           | Description                      |
+|----------------------------------------------------|----------------------------------------------------------------------|----------------------------------|
+| `/rs_camera/left/color/image_raw`                  | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Raw left camera image data |
+| `/rs_camera/left/color/image_raw/compressed`       | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of raw left camera image data |
+| `/rs_camera/left/rect/color/image_raw`             | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Rectified left camera image data |
+| `/rs_camera/left/rect/color/image_raw/compressed`  | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of rectified left camera image data |
+| `/rs_camera/right/color/image_raw`                 | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Raw right camera image data |
+| `/rs_camera/right/color/image_raw/compressed`      | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of raw right camera image data |
+| `/rs_camera/right/rect/color/image_raw`            | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Rectified right camera image data |
+| `/rs_camera/right/rect/color/image_raw/compressed` | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of rectified right camera image data |
+| `/rs_lidar/points`                                 | `sensor_msgs/msg/PointCloud2` <br> `sensor_msgs/PointCloud2`         | Point cloud data with frame_id as rslidar |
+| `/rs_imu`                                          | `sensor_msgs/msg/Imu` <br> `sensor_msgs/Imu`                         | IMU (Inertial Measurement Unit) data |

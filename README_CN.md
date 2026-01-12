@@ -63,9 +63,7 @@ AC1/AC2 传感器数据传输量较大，必须使用 USB 3.0（或更高）接�
 
 ## 5. 编译 ac_driver
 
-在完成前置依赖后，可开始编译 ac_driver 驱动程序。
-
-1. 打开一个新的终端窗口，并将当前路径切换至包含 `ac_driver` 源码的工作空间根目录：
+打开一个新的终端窗口，并将当前路径切换至包含 `ac_driver` 源码的工作空间根目录：
 
 ```bash
 cd /your/workspace/robosense_ac_driver
@@ -73,51 +71,86 @@ cd /your/workspace/robosense_ac_driver
 
 > 💡 请将 `/your/workspace` 替换为你实际存放源码的路径。
 
-2. 加载已安装的 ROS 2 Humble 环境变量，然后使用 `colcon` 进行构建：
+在完成前置依赖后，可根据您使用的 ROS 版本选择对应的编译方式。
+
+### ROS2
+
+加载 ROS2 环境变量，然后使用 `colcon` 进行构建：
 
 ```bash
 source /opt/ros/humble/setup.bash
-rm -rf build/ install/ log/  # （可选）若工作空间中已存在 install 或 build 目录
+rm -rf build/ install/ log/  # （可选）清理旧构建文件
 colcon build
+```
+
+### ROS
+
+加载 ROS 环境变量，然后使用 `catkin_make` 进行构建：
+
+```bash
+source /opt/ros/noetic/setup.bash
+rm -rf build/ devel/  # （可选）清理旧构建文件
+catkin_make
 ```
 
 ## 6. 运行 ac_driver
 
-成功编译 ac_driver 后，就可以启动节点了。
+成功编译 ac_driver 后，就可以启动节点了。请根据所用 ROS 版本执行对应命令。
 
-1. 设置运行环境
+### ROS2
 
-在启动 `ac_driver` 节点之前，首先需要加载编译生成的环境变量。这将确保当前终端能够识别并运行新构建的包。打开一个新终端，执行以下命令：
-
+- 对于 AC1
 ```bash
 source install/setup.bash
+ros2 launch ac_driver start_ac1.launch.py
 ```
 
-2. 启动节点
+- 对于 AC2
+```bash
+source install/setup.bash
+ros2 launch ac_driver start_ac2_usb.launch.py
+```
 
-- 对于 AC1：
-  ```bash
-  ros2 launch ac_driver start_ac1.launch.py
-  ```
+### ROS
 
-- 对于 AC2：
-  ```bash
-  ros2 launch ac_driver start_ac2_usb.launch.py
-  ```
+- 对于 AC1
+```bash
+source devel/setup.bash
+roslaunch ac_driver start_ac1.launch
+```
+
+- 对于 AC2
+```bash
+source devel/setup.bash
+roslaunch ac_driver start_ac2_usb.launch
+```
 
 ## 7. 话题名称及消息类型
 
-- /rs_camera/color/image_raw                                         ->  sensor_msgs(::msg):::Image
-- /rs_camera/color/image_raw/compressed                  -> sensor_msgs(::msg)::CompressedImage  
-- /rs_camera/rect/color/image_raw                                 -> sensor_msgs(::msg):::Image
-- /rs_camera/rect/color/image_raw/compressed          -> sensor_msgs(::msg)::CompressedImage 
-- /rs_camera/left/color/image_raw                                   ->  sensor_msgs(::msg):::Image 
-- /rs_camera/left/color/image_raw/compressed            -> sensor_msgs(::msg)::CompressedImage 
-- /rs_camera/left/rect/color/image_raw                           -> sensor_msgs(::msg):::Image
-- /rs_camera/left/rect/color/image_raw/compressed    ->  sensor_msgs(::msg)::CompressedImage 
-- /rs_camera/right/color/image_raw                                 -> sensor_msgs(::msg):::Image 
-- /rs_camera/right/color/image_raw/compressed          -> sensor_msgs(::msg)::CompressedImage  
-- /rs_camra/right/rect/color/image_raw                           -> sensor_msgs(::msg):::Image 
-- /rs_camera/right/rect/color/image_raw/compressed -> sensor_msgs(::msg)::CompressedImage  
-- /rs_lidar/points                                                                   -> sensor_msgs(::msg):::PointCloud2, 其中点云的frame_id为"rslidar"
-- /rs_imu                                                                                 -> sensor_msgs(::msg):::Imu  
+> 💡 说明：下方表格中，每行“话题类型”第一行为 ROS2 格式，第二行为 ROS 格式。
+
+对于 AC1
+
+| 话题名称                                      | 话题类型                                                               | 含义 |
+|----------------------------------------------|----------------------------------------------------------------------|-----|
+| `/rs_camera/color/image_raw`                 | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | 彩色相机原始图像数据 |
+| `/rs_camera/color/image_raw/compressed`      | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | 彩色相机原始图像的压缩版本 |
+| `/rs_camera/rect/color/image_raw`            | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | 经过校正后的彩色相机图像数据 |
+| `/rs_camera/rect/color/image_raw/compressed` | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | 经过校正后的彩色相机图像数据的压缩版本 |
+| `/rs_lidar/points`                           | `sensor_msgs/msg/PointCloud2` <br> `sensor_msgs/PointCloud2`         | 点云数据 frame_id 为 rslidar |
+| `/rs_imu`                                    | `sensor_msgs/msg/Imu` <br> `sensor_msgs/Imu`                         | IMU（惯性测量单元）数据 |
+
+对于 AC2
+
+| 话题名称                                            | 话题类型                                                               | 含义 |
+|----------------------------------------------------|----------------------------------------------------------------------|-----|
+| `/rs_camera/left/color/image_raw`                  | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | 左相机原始图像数据 |
+| `/rs_camera/left/color/image_raw/compressed`       | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | 左相机原始图像的压缩版本 |
+| `/rs_camera/left/rect/color/image_raw`             | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | 经过校正后的左相机图像数据 |
+| `/rs_camera/left/rect/color/image_raw/compressed`  | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | 经过校正后的左相机图像数据的压缩版本 |
+| `/rs_camera/right/color/image_raw`                 | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | 右相机原始图像数据 |
+| `/rs_camera/right/color/image_raw/compressed`      | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | 右相机原始图像的压缩版本 |
+| `/rs_camera/right/rect/color/image_raw`            | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | 经过校正后的右相机图像数据 |
+| `/rs_camera/right/rect/color/image_raw/compressed` | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | 经过校正后的右相机图像数据的压缩版本 |
+| `/rs_lidar/points`                                 | `sensor_msgs/msg/PointCloud2` <br> `sensor_msgs/PointCloud2`         | 点云数据 frame_id 为 rslidar |
+| `/rs_imu`                                          | `sensor_msgs/msg/Imu` <br> `sensor_msgs/Imu`                         | IMU（惯性测量单元）数据 |
