@@ -19,7 +19,7 @@ Supported Typical Configurations:
   - Ubuntu 20.04 (Focal Fossa) + ROS Noetic (pre-compiled installation)  
     Installation guide: [ROS Noetic Official Installation Guide](https://wiki.ros.org/noetic/Installation/Ubuntu)
 
-> 💡 Note: If using other Ubuntu versions (e.g., 22.04 or 24.04), please select the corresponding ROS2 distribution and handle compatibility adjustments yourself.
+> 💡 Note: If using other Ubuntu versions (e.g., 24.04), please select the corresponding ROS2 distribution and handle compatibility adjustments yourself.
 
 ## 3. Code Download
 

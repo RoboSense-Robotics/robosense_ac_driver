@@ -19,7 +19,7 @@ robosense_ac_driver 是一个基于 ROS/ROS2 的驱动包，用于支持 RoboSen
   - Ubuntu 20.04 (Focal Fossa) + ROS Noetic (预编译安装)  
     安装请参考：[ROS Noetic 官方安装文档](https://wiki.ros.org/noetic/Installation/Ubuntu)
 
-> 💡 提示：若使用其他 Ubuntu 版本（如 22.04 或 24.04），需选择对应的 ROS2 发行版，并自行适配兼容性。
+> 💡 提示：若使用其他 Ubuntu 版本（如 24.04），需选择对应的 ROS2 发行版，并自行适配兼容性。
 
 ## 3. 代码下载
 
