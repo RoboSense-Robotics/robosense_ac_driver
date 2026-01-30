@@ -4,7 +4,7 @@
 
 ## 1. 简介
 
-ac_driver是AC传感器驱动的ROS中间件节点,用于接收传感器数据，整合和发布给其它节点使用。传感器数据包括摄像头，激光雷达和IMU。
+ac_driver是AC1/AC2传感器驱动的ROS/ROS2中间件节点,用于接收传感器数据，整合和发布给其它节点使用。传感器数据包括摄像头，激光雷达和IMU。
 
 ## 2. 构建
 
@@ -41,7 +41,8 @@ sudo ln -s /usr/lib/aarch64-linux-gnu/librga.so.2.1.0 /usr/lib/aarch64-linux-gnu
 sudo ln -s /usr/lib/aarch64-linux-gnu/libdrm.so.2.123.0 /usr/lib/aarch64-linux-gnu/libdrm.so
 ```
 #### 2.1.2 X86
-如果支持Nvidia GPU, 则参考2.1.3节安装必要的CUDA相关依赖， 如果不支持，则确保安装Opencv； 
+确保安装Opencv，如果要使用GPU进行JPEG图像压缩，则参考https://github.com/CESNET/GPUJPEG 安装第三发依赖库 
+
 #### 2.1.3 Jetson Orin 平台
 
 请确保CUDA环境已正确安装。以下是步骤：
@@ -57,7 +58,7 @@ sudo apt-get install nvidia-cuda-toolkit
 nvcc --version
 ```
 
-3. 确保已安装ROS2和OpenCV的相关依赖。
+3. 确保已安装ROS2和OpenCV的相关依赖，如果要使用GPU进行JPEG图像压缩，则参考https://github.com/CESNET/GPUJPEG 安装第三方依赖库
 
 4. 按照2.1.4节中的说明进行项目构建。
 
@@ -67,7 +68,9 @@ nvcc --version
 
 进入src所在目录， 使用以下命令进行编译:
 
-`caktin_make`
+```
+caktin_make
+```
 
 ##### 2.1.4.2 ROS2 环境
 
@@ -111,10 +114,11 @@ export ROS_DOMAIN_ID=<your_domain_id>
 使用以下命令运行ac_driver节点
 
 ```bash
-roslaunch ac_driver start.launch 
-或
-roscore 2>&1 >/dev/null &
-rosrun ac_driver ms_node [_device_interface:="usb" _image_input_fps:=30 _imu_input_fps:=200 _enable_jpeg:=false _jpeg_quality:=70 _topic_prefix:="" _serial_number:="" _gmsl_device_number:="/dev/video30" _angle_calib_basic_dir_path:="" _device_manager_debug:=false _point_frame_id:="rslidar" _ac1_image_frame_id:="rslidar"  _ac2_left_image_frame_id:="rslidar" _ac2_right_image_frame_id:="rslidar"  _imu_frame_id:="rslidar"  _enable_use_lidar_clock:=false  _enable_use_dense_points:=false  _enable_use_first_point_ts:= false _timestamp_output_dir_path=""]
+对于AC1设备:  
+roslaunch ac_driver start_ac1.launch start_rviz_node:=false|true 
+对于AC2设备: 
+roslaunch ac_driver start_ac2_usb.launch start_rviz_node:=false|true 
+roslaunch ac_driver start_ac2_gmsl.launch start_rviz_node:=false|true 
 ```
 
 ### 3.2.2 ROS2 环境
@@ -123,19 +127,25 @@ rosrun ac_driver ms_node [_device_interface:="usb" _image_input_fps:=30 _imu_inp
 
 1. 非零拷贝模式
 ```bash
-ros2 run ac_driver ms_node [--ros-args --param device_interface:="usb" --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false --param jpeg_quality:=70 --param topic_prefix:="" --param serial_number:="" --param gmsl_device_number="/dev/video30" --param angle_calib_basic_dir_path:="" --param device_manager_debug:=false --param point_frame_id:="rslidar" --param ac1_image_frame_id:="rslidar" --param ac2_left_image_frame_id:="rslidar" --param ac2_right_image_frame_id:="rslidar" --param imu_frame_id:="rslidar" --param enable_use_lidar_clock:=false --param enable_use_dense_points:=false --param enable_use_first_point_ts:= false --param timestamp_output_dir_path:=""]
-或 
-ros2 launch ac_driver start.launch.py 
+Step1: 设置enable_ros2_zero_copy参数为false
+对于AC1设备: 
+ros2 launch ac_driver start_ac1.launch.py start_rviz_node:=false|true 
+对于AC2设备: 
+ros2 launch ac_driver start_ac2_usb.launch.py start_rviz_node:=false|true 
+ros2 launch ac_driver start_ac2_gmsl.launch.py start_rviz_node:=false|true 
 ```
 2. 零拷贝模式(仅限ros2 humble版本使用FASTDDS进行通信时)
 ```bash
+Step1: 前置环境变量设置
 export FASTRTPS_DEFAULT_PROFILES_FILE=ac_driver/conf/shm_fastdds.xml
 export RMW_FASTRTPS_USE_QOS_FROM_XML=1
-ros2 run ac_driver ms_node [--ros-args --param device_interface:="usb" --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false --param jpeg_quality:=70 --param topic_prefix:="" --param serial_number:="" --param gmsl_device_number="/dev/video30" --param angle_calib_basic_dir_path:="" --param device_manager_debug:=false --param point_frame_id:="rslidar" --param ac1_image_frame_id:="rslidar" --param ac2_left_image_frame_id:="rslidar" --param ac2_right_image_frame_id:="rslidar" --param imu_frame_id:="rslidar" --param enable_use_lidar_clock:=false --param enable_use_dense_points:=false --param enable_use_first_point_ts:= false --param timestamp_output_dir_path:=""]
-或
-export FASTRTPS_DEFAULT_PROFILES_FILE=ac_driver/conf/shm_fastdds.xml
-export RMW_FASTRTPS_USE_QOS_FROM_XML=1
-ros2 launch ac_driver start.launch.py
+
+Step2: 设置enable_ros2_zero_copy参数为true 
+对于AC1设备: 
+ros2 launch ac_driver start_ac1.launch.py start_rviz_node:=false|true 
+对于AC2设备: 
+ros2 launch ac_driver start_ac2_usb.launch.py start_rviz_node:=false|true 
+ros2 launch ac_driver start_ac2_gmsl.launch.py start_rviz_node:=false|true 
 ```
 
 ### 3.2.3 参数说明
@@ -161,28 +171,23 @@ ros2 launch ac_driver start.launch.py
 - device_calib_file_path: 设备的离线标定文件路径 
 - device_manager_debug: 是否开启设备管理Debug模式，默认关闭
 - enable_use_lidar_clock: 是否使用AC1/AC2的设备时间，默认关闭 
+- timestamp_compensate_s: 在使用雷达时间时，时间同步后的补偿值，默认为0.0, 单位秒(s) 
 - enable_use_dense_points：是否AC1/AC2输出稠密点，默认关闭 
 - enable_use_first_point_ts：点云帧时间戳是否为第一个点的时间戳，默认为关闭
 - enable_ac2_pointcloud_wave_split: 对于AC2是否根据回波编号进行分离，默认为关闭
+- enable_ros2_zero_copy: 是否开启零拷贝，默认为false，非零拷贝
 - timestamp_output_dir_path:  表示输出时间戳信息的保存文件夹路径，如果为空，表示不输出 
 - enable_pointcloud_send: 表示是否通过ROS/ROS2发送点云数据，默认为开启 
 - enable_ac1_image_send: 表示是否通过ROS/ROS2发送AC1图像数据，默认为开启 
 - enable_ac2_left_image_send: 表示是否通过ROS/ROS2发送AC2图像数据，默认为开启 
 - enable_ac2_right_image_send: 表示是否通过ROS/ROS2发送AC2图像数据，默认为开启 
 - enable_imu_send: 表示是否通过ROS/ROS2发送IMU数据，默认为开启
+- SPDLOG配置: log_file_dir_path/log_level/is_log_file_trunc, 表示log保存文件夹路径; 日志输出等级，默认为2即INFO等级；是否截断输出 
 - AC1相机图像裁减配置: ac1_crop_top/ac1_crop_bottom/ac1_crop_left/ac1_crop_right, 默认为0，表示不裁剪
 - AC2 左相机图像裁剪配置: ac2_left_crop_top/ac2_left_crop_bottom/ac2_left_crop_left/ac2_left_crop_right, 默认为0，表示不裁剪 
 - AC2 右相机图像裁剪配置: ac2_right_crop_top/ac2_right_crop_bottom/ac2_right_crop_left/ac2_right_crop_right, 默认为0，表示不裁剪
 
 根据启动节点的方法不同， 可以在launch文件或者启动命令中传输参数，使用launch文件启动时，将自动启动rviz工具
-
-
-
-### 3.2.4 格式说明
-
-- 当前对jetson orin平台对图像做了转码优化，默认驱动直接出nv12，通过GPU转成rgb24格式图像发布；
-
-- 其他平台默认直出rgb24，并采用cpu/gpu jepg压缩，压缩功能考虑到性能的影响，默认关闭压缩功能，可以通过enable_jpeg开关打开。
 
 
 
@@ -427,16 +432,5 @@ convertToRosPointCloud2(const typename RS_POINTCLOUD_TYPE::SharedPtr &msgPtr,
   memcpy(rosMsg.data.data(), msgPtr->data.data(), data_size);
 
   return 0;
-}
-```
-
-### 5.2 运行性能
-
-* 图像30fps在orin nano实测cpu占用为105，若取消jpeg压缩则可降低40~50%,可按需取消，取消方法：将以下代码注释掉：
-```cpp
-{
-    std::lock_guard<std::mutex> lock(jpeg_mutex_);
-    jpeg_queue_.push(msgPtr);
-    jpeg_condition_.notify_one();
 }
 ```

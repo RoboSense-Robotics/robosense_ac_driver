@@ -64,6 +64,7 @@ target_include_directories(${CUR_LIB}
         ./rs_driver/src
         ${THIRD_PARTY_DIR}/libusb
         ${CMAKE_CURRENT_BINARY_DIR}/../devicemanager/rs_driver/thirdparty/libuvc
+        ${CMAKE_CURRENT_BINARY_DIR}/../logmanager/include 
         )
         
 if(ENABLE_SUPPORT_ALGORITHM)
@@ -72,12 +73,14 @@ if(ENABLE_SUPPORT_ALGORITHM)
                 usb-ac-static 
                 uvc-ac-static  
                 rsalgo_ac2
+                log 
         )
 else() 
         target_link_libraries(${CUR_LIB}
                 PUBLIC
                 usb-ac-static 
-                uvc-ac-static  
+                uvc-ac-static
+                log  
         )        
 endif() 
 

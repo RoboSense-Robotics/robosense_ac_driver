@@ -45,18 +45,18 @@ bool DeviceManager::init(
 
   _deviceInterfaceType = deviceInterfaceType;
   _enable_debug = isEnableDebug;
-  RS_INFOL << "DeviceManager: _enable_debug = " << _enable_debug << RS_REND;
+  RS_SPDLOG_INFO("DeviceManager: _enable_debug = " +
+                 std::to_string(_enable_debug));
 
   int res;
-
   if (_deviceInterfaceType ==
       robosense::device::DeviceInterfaceType::DEVICE_INTERFACE_USB) {
     if (!_usb_ctx) {
       res = libusb_init(&_usb_ctx);
       if (res < 0) {
         _usb_ctx = nullptr;
-        RS_ERROR << "DeviceManager: Initial USB Context Failed: res = " << res
-                 << RS_REND;
+        RS_SPDLOG_ERROR("DeviceManager: Initial USB Context Failed: res = " +
+                        std::to_string(res));
         return false;
       }
     }
@@ -74,7 +74,7 @@ bool DeviceManager::init(
       _usb_thread = std::thread(thread_usb_event, this);
     } catch (const std::system_error &e) {
       _kill_handler_thread = 0;
-      RS_ERROR << "DeviceManager: Create USB Event Thread Failed !" << RS_REND;
+      RS_SPDLOG_ERROR("DeviceManager: Create USB Event Thread Failed !");
       return false;
     }
 
@@ -83,8 +83,7 @@ bool DeviceManager::init(
       _m_thread = std::thread(&DeviceManager::hotplugWorkThread, this);
     } catch (const std::system_error &e) {
       _start = false;
-      RS_ERROR << "DeviceManager: Create Device Hotplug Thread Failed !"
-               << RS_REND;
+      RS_SPDLOG_ERROR("DeviceManager: Create Device Hotplug Thread Failed !");
       return false;
     }
   }
@@ -112,10 +111,10 @@ int DeviceManager::stop() {
 
   int ret = closeDevices();
   if (ret != 0) {
-    RS_ERROR << "DeviceManager: Close All Devices Failed !" << RS_REND;
+    RS_SPDLOG_ERROR("DeviceManager: Close All Devices Failed !");
     return -1;
   } else {
-    RS_INFOL << "DeviceManager: Close All Device Successed !" << RS_REND;
+    RS_SPDLOG_INFO("DeviceManager: Close All Device Successed !");
   }
 
   if (_deviceInterfaceType ==
@@ -160,8 +159,8 @@ int DeviceManager::openDevice(const RSDeviceOpenConfig &device_config) {
   switch (_deviceInterfaceType) {
   case robosense::device::DeviceInterfaceType::DEVICE_INTERFACE_USB: {
     if (iterMap == _devices_map.end()) {
-      RS_ERROR << "DeviceManager: device uuid = " << device_config.device_uuid
-               << " Not Attach !" << RS_REND;
+      RS_SPDLOG_ERROR("DeviceManager: device uuid = " +
+                      device_config.device_uuid + " Not Attach !");
       return -1;
     }
     break;
@@ -179,8 +178,8 @@ int DeviceManager::openDevice(const RSDeviceOpenConfig &device_config) {
   }
 
   if (iterMap->second.driver_ptr != nullptr) {
-    RS_INFOL << "DeviceManager: device uuid = " << device_config.device_uuid
-             << " Already Open, Not Need Open Again !" << RS_REND;
+    RS_SPDLOG_INFO("DeviceManager: device uuid = " + device_config.device_uuid +
+                   " Already Open, Not Need Open Again !");
     return 0;
   }
 
@@ -188,8 +187,9 @@ int DeviceManager::openDevice(const RSDeviceOpenConfig &device_config) {
   try {
     driver_ptr.reset(new RS_DEVICE_DRIVER());
   } catch (...) {
-    RS_ERROR << "DeviceManager: device uuid = " << device_config.device_uuid
-             << " Malloc Device Driver Failed !" << RS_REND;
+    RS_SPDLOG_ERROR(
+        "DeviceManager: device uuid = " + device_config.device_uuid +
+        " Malloc Device Driver Failed !");
     return -2;
   }
   std::weak_ptr<DeviceManager> weak_this = shared_from_this();
@@ -245,7 +245,7 @@ int DeviceManager::openDevice(const RSDeviceOpenConfig &device_config) {
         if (!share_this || !msgPtr) {
           return;
         }
-        // RS_INFOL << "RUN HERE: " << msgPtr->frame_format << RS_REND; 
+        // RS_SPDLOG_INFO("RUN HERE: " << msgPtr->frame_format );
         // AERROR << "RUN HERE";
         RSTimestampItem::Ptr timestampItemPtr(new RSTimestampItem());
         timestampItemPtr->receive_timestamp_ns = timestamp_ns;
@@ -340,6 +340,8 @@ int DeviceManager::openDevice(const RSDeviceOpenConfig &device_config) {
     driverParam.decoder_param.angle_path =
         device_config.angle_calib_basic_dir_path;
   }
+  driverParam.decoder_param.sync_timestamp_offset =
+      device_config.timestamp_compensate_s;
 #if defined(ENABLE_SUPPORT_RS_DRIVER_ALGORITHM)
   driverParam.decoder_param.algorithm_param = device_config.algorithm_param;
 #endif // defined(ENABLE_SUPPORT_RS_DRIVER_ALGORITHM)
@@ -347,15 +349,15 @@ int DeviceManager::openDevice(const RSDeviceOpenConfig &device_config) {
 
   bool isSuccess = driver_ptr->init(driverParam);
   if (!isSuccess) {
-    RS_ERROR << "DeviceManager: device uuid = " << device_config.device_uuid
-             << " Inital Failed !" << RS_REND;
+    RS_SPDLOG_ERROR("DeviceManager: device uuid = " +
+                    device_config.device_uuid + " Inital Failed !");
     return -3;
   }
 
   isSuccess = driver_ptr->start();
   if (!isSuccess) {
-    RS_ERROR << "DeviceManager: device uuid = " << device_config.device_uuid
-             << " Start Failed !" << RS_REND;
+    RS_SPDLOG_ERROR("DeviceManager: device uuid = " +
+                    device_config.device_uuid + " Start Failed !");
     return -4;
   }
 
@@ -373,12 +375,12 @@ int DeviceManager::closeDevice(const std::string &device_uuid,
       std::lock_guard<std::mutex> lg(_devices_map_mtx);
       auto iterMap = _devices_map.find(device_uuid);
       if (iterMap == _devices_map.end()) {
-        RS_ERROR << "DeviceManager: Device uuid = " << device_uuid
-                 << " Already Detach !" << RS_REND;
+        RS_SPDLOG_ERROR("DeviceManager: Device uuid = " + device_uuid +
+                        " Already Detach !");
         return 0;
       } else if (iterMap->second.driver_ptr == nullptr) {
-        RS_INFOL << "DeviceManager: Device uuid = " << device_uuid
-                 << " Not Open, So Not Need Close !" << RS_REND;
+        RS_SPDLOG_INFO("DeviceManager: Device uuid = " + device_uuid +
+                       " Not Open, So Not Need Close !");
         return 0;
       }
       driver_ptr = iterMap->second.driver_ptr;
@@ -399,12 +401,12 @@ int DeviceManager::closeDevice(const std::string &device_uuid,
   } else {
     auto iterMap = _devices_map.find(device_uuid);
     if (iterMap == _devices_map.end()) {
-      RS_ERROR << "DeviceManager: Device uuid = " << device_uuid
-               << " Already Detach !" << RS_REND;
+      RS_SPDLOG_ERROR("DeviceManager: Device uuid = " + device_uuid +
+                      " Already Detach !");
       return 0;
     } else if (iterMap->second.driver_ptr == nullptr) {
-      RS_INFOL << "DeviceManager: Device uuid = " << device_uuid
-               << " Not Open, So Not Need Close !" << RS_REND;
+      RS_SPDLOG_INFO("DeviceManager: Device uuid = " + device_uuid +
+                     " Not Open, So Not Need Close !");
       return 0;
     }
     iterMap->second.driver_ptr->stop();
@@ -418,9 +420,9 @@ int DeviceManager::pauseDevice(const std::string &device_uuid,
   std::lock_guard<std::mutex> lg(_devices_map_mtx);
   auto iterMap = _devices_map.find(device_uuid);
   if (iterMap == _devices_map.end()) {
-    RS_ERROR << "DeviceManager: Device uuid = " << device_uuid
-             << " Not Attach, So Not Need " << (isPauseOp ? "Pause" : "Play")
-             << " !" << RS_REND;
+    RS_SPDLOG_ERROR("DeviceManager: Device uuid = " + device_uuid +
+                    " Not Attach, So Not Need " +
+                    (isPauseOp ? "Pause" : "Play") + " !");
     return -1;
   }
   iterMap->second.is_pause = isPauseOp;
@@ -434,8 +436,8 @@ int DeviceManager::closeDevices() {
     const std::string &device_uuid = _devices_map.begin()->second.uuid;
     int ret = closeDevice(device_uuid, false);
     if (ret != 0) {
-      RS_ERROR << "DeviceManager: device uuid = " << device_uuid
-               << " Close Failed: ret = " << ret << RS_REND;
+      RS_SPDLOG_ERROR("DeviceManager: device uuid = " + device_uuid +
+                      " Close Failed: ret = " + std::to_string(ret));
       return -1;
     }
     _devices_map.erase(_devices_map.begin());
@@ -654,8 +656,8 @@ int DeviceManager::findDevices(
   libusb_device **usb_dev_list;
   ssize_t num_usb_devices = libusb_get_device_list(_usb_ctx, &usb_dev_list);
   if (num_usb_devices < 0) {
-    RS_ERROR << "get device list failed: num_usb_devices = " << num_usb_devices
-             << RS_REND;
+    RS_SPDLOG_ERROR("get device list failed: num_usb_devices = " +
+                    std::to_string(num_usb_devices));
     return -1;
   }
 
@@ -663,18 +665,18 @@ int DeviceManager::findDevices(
     libusb_device *device = usb_dev_list[i];
     libusb_device_descriptor desc;
     if (libusb_get_device_descriptor(device, &desc) != LIBUSB_SUCCESS) {
-      RS_ERROR << "get device descriptor failed !" << RS_REND;
+      RS_SPDLOG_ERROR("get device descriptor failed !");
       continue;
     }
     if (_enable_debug) {
-      RS_INFOL << "usb device index = " << i << RS_REND;
+      RS_SPDLOG_INFO("usb device index = " + std::to_string(i));
     }
     if (desc.idVendor == VENDOR_ID &&
         (desc.idProduct == PRODUCT_ID || desc.idProduct == PRODUCT_ID2)) {
       if (_enable_debug) {
-        RS_INFOL << "matched usb device index = " << i
-                 << ", desc.idVendor = " << desc.idVendor
-                 << ", desc.idProduct = " << desc.idProduct << RS_REND;
+        RS_SPDLOG_INFO("matched usb device index = " + std::to_string(i) +
+                       ", desc.idVendor = " + std::to_string(desc.idVendor) +
+                       ", desc.idProduct = " + std::to_string(desc.idProduct));
       }
       libusb_device_handle *handle;
       std::string uuid("0");
@@ -689,8 +691,8 @@ int DeviceManager::findDevices(
         libusb_close(handle);
 
         if (_enable_debug) {
-          RS_INFOL << "findDevice ===> " << uuid
-                   << ", i_sn = " << desc.iSerialNumber << RS_REND;
+          RS_SPDLOG_INFO("findDevice ===> " + uuid +
+                         ", i_sn = " + std::to_string(desc.iSerialNumber));
         }
 
         // 获取uuid 成功
@@ -732,13 +734,14 @@ void DeviceManager::hotplugWorkThread() {
     std::map<std::string, DeviceInfoItem> deviceItems;
     int ret = findDevices(deviceItems);
     if (ret != 0) {
-      RS_ERROR << "find Devices Failed: ret = " << ret << RS_REND;
+      RS_SPDLOG_ERROR("find Devices Failed: ret = " + std::to_string(ret));
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       continue;
     }
 
     if (_enable_debug) {
-      RS_INFOL << "deviceItems size = " << deviceItems.size() << RS_REND;
+      RS_SPDLOG_INFO("deviceItems size = " +
+                     std::to_string(deviceItems.size()));
     }
 
     attachDevices.clear();

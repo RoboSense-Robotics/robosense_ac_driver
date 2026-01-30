@@ -197,6 +197,11 @@ endif(enable_use_cuda_gpu)
 include_directories(${THIRD_PARTY_DIR}/rga) 
 
 #
+# spdlog 
+#
+include_directories(${THIRD_PARTY_DIR}/spdlog)
+
+#
 # devicemanager 
 # 
 include_directories(${PROJECT_SOURCE_DIR}/devicemanager) 
@@ -210,6 +215,27 @@ include_directories(${PROJECT_SOURCE_DIR}/codec)
 include_directories(${PROJECT_SOURCE_DIR}/codec/include/)
 add_subdirectory(codec)
 
+#
+# logmanager 
+# 
+set(enable_spdlog_use_full_file_name false)
+if(enable_spdlog_use_full_file_name)
+  message("enable spdlog use full file name !")
+  add_definitions(-DENABLE_SPDLOG_USE_FULL_FILE_NAME)
+elseif() 
+  message("disable spdlog use full file name !")
+endif(enable_spdlog_use_full_file_name)
+set(enable_spdlog_get_cpu_num true)
+if(enable_spdlog_get_cpu_num)
+  message("enable spdlog get cpu number !")
+  add_definitions(-DENABLE_SPDLOG_GET_CPU_NUM)
+elseif(enable_spdlog_get_cpu_num)
+  message("disable spdlog get cpu number !") 
+endif(enable_spdlog_get_cpu_num)
+include_directories(${PROJECT_SOURCE_DIR}/logmanager) 
+include_directories(${PROJECT_SOURCE_DIR}/logmanager/include/)
+add_subdirectory(logmanager)
+
 #Ros2#
 add_executable(ms_node src/metaS_node.cpp)
 target_link_libraries(ms_node ${SS_LIBRARY} ${YAML_CPP_LIBRARIES})
@@ -222,7 +248,7 @@ target_link_libraries(ms_node ${LZMA_LIBRARY})
 target_link_libraries(ms_node ${M_LIBRARY})
 target_link_libraries(ms_node ${Z_LIBRARY})
 target_link_libraries(ms_node ${PCL_LIBRARIES})
-target_link_libraries(ms_node device codec)
+target_link_libraries(ms_node device codec log)
 if(TARGET_ARCH STREQUAL "RK3588")
   find_library(NUMA_LIBRARY numa)
   target_link_libraries(ms_node ${NUMA_LIBRARY})
@@ -267,7 +293,7 @@ elseif(ROS_VERSION EQUAL 2)
     DESTINATION lib/${PROJECT_NAME}
   )
 
-  install(DIRECTORY conf launch rviz
+  install(DIRECTORY conf launch rviz log 
     DESTINATION share/${PROJECT_NAME}
   )
   ament_package()

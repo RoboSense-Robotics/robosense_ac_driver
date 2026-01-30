@@ -16,7 +16,7 @@
 #ifndef DEVICEMANAGER_H
 #define DEVICEMANAGER_H
 
-// #include "hyper_vision/common/common.h"
+#include "hyper_vision/logmanager/logmanager.h"
 #include "libusb/libusb.h"
 #include "rs_driver/api/lidar_driver.hpp"
 #include "rs_driver/msg/pcl_point_cloud_msg.hpp"
@@ -116,6 +116,7 @@ public:
     enable_ac2_left_image_send = true;
     enable_ac2_right_image_send = true;
     enable_imu_send = true;
+    timestamp_compensate_s = 0.0;
   }
 
 public:
@@ -137,9 +138,39 @@ public:
   bool enable_ac2_left_image_send;
   bool enable_ac2_right_image_send;
   bool enable_imu_send;
+  double timestamp_compensate_s;
 #if defined(ENABLE_SUPPORT_RS_DRIVER_ALGORITHM)
   robosense::lidar::AlgorithmParam algorithm_param;
 #endif // defined(ENABLE_SUPPORT_RS_DRIVER_ALGORITHM)
+};
+
+class RSTimeFormatUtil {
+public:
+  using Ptr = std::shared_ptr<RSTimeFormatUtil>;
+  using ConstPtr = std::shared_ptr<const RSTimeFormatUtil>;
+
+public:
+  RSTimeFormatUtil() { time_format_ = "%Y-%m-%d %H:%M:%S"; }
+
+  RSTimeFormatUtil(const std::string &format) { time_format_ = format; }
+  ~RSTimeFormatUtil() = default;
+
+public:
+  int setTimeFormat(const std::string &format) {
+    time_format_ = format;
+    return 0;
+  }
+
+  std::string currentTimeString() {
+    auto time_point = std::chrono::system_clock::now();
+    std::time_t time_c = std::chrono::system_clock::to_time_t(time_point);
+    std::ostringstream time_stream;
+    time_stream << std::put_time(std::localtime(&time_c), time_format_.c_str());
+    return time_stream.str();
+  }
+
+private:
+  std::string time_format_;
 };
 
 enum class RS_CHANNEL_ID_TYPE {
@@ -206,7 +237,7 @@ public:
   int init(const std::string &timestamp_file_path,
            const uint32_t output_block_size = 1000) {
     if (timestamp_file_path.empty()) {
-      RS_ERROR << "Input Timestamp File Path Is Empty !" << RS_REND;
+      RS_SPDLOG_ERROR("Input Timestamp File Path Is Empty !");
       return -1;
     }
     output_block_size_ = output_block_size;
@@ -214,7 +245,8 @@ public:
 
     int ret = init();
     if (ret != 0) {
-      RS_ERROR << "RSTimestampManager Initial Failed: ret = " << ret << RS_REND;
+      RS_SPDLOG_ERROR("RSTimestampManager Initial Failed: ret = " +
+                      std::to_string(ret));
       return -2;
     }
 
@@ -251,14 +283,14 @@ private:
       ofstr_ptr_.reset(new std::ofstream(
           timestamp_file_path_, std::ios_base::out | std::ios_base::binary));
     } catch (...) {
-      RS_ERROR << "Malloc fstream Failed: timestamp_file_path_ = "
-               << timestamp_file_path_ << RS_REND;
+      RS_SPDLOG_ERROR("Malloc fstream Failed: timestamp_file_path_ = " +
+                      timestamp_file_path_);
       return -1;
     }
 
     if (!ofstr_ptr_->is_open()) {
-      RS_ERROR << "Open File: timestamp_file_path_ = " << timestamp_file_path_
-               << " To Write Failed !" << RS_REND;
+      RS_SPDLOG_ERROR("Open File: timestamp_file_path_ = " +
+                      timestamp_file_path_ + " To Write Failed !");
       return -2;
     }
     (*ofstr_ptr_) << "topic_name, timestamp_ns(ns), sot_timestamp(ns), "
@@ -271,7 +303,7 @@ private:
       active_buffer_.reset(
           new std::list<robosense::device::RSTimestampItem::Ptr>());
     } catch (...) {
-      RS_ERROR << "Malloc Active Buffer Failed !";
+      RS_SPDLOG_ERROR("Malloc Active Buffer Failed !");
       return -3;
     }
 
@@ -280,7 +312,7 @@ private:
       thread_ptr_.reset(new std::thread(&RSTimestampManager::workThread, this));
     } catch (...) {
       is_running_ = false;
-      RS_ERROR << "Malloc Work Thread Failed !" << RS_REND;
+      RS_SPDLOG_ERROR("Malloc Work Thread Failed !");
       return -4;
     }
 

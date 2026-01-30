@@ -4,7 +4,7 @@
 
 ## 1. Introduction
 
-ac_driver is the ROS middleware node for the AC driver, which is used to receive sensor data from AC, integrate the data, and then publish it for use by other nodes. This includes data from three sources: camera, lidar, and IMU.
+ac_driver is the ROS/ROS2 middleware node for the AC1/AC2 driver, which is used to receive sensor data from AC1/AC2, integrate the data, and then publish it for use by other nodes. This includes data from three sources: camera, lidar, and IMU.
 
 ## 2. Installation
 
@@ -45,30 +45,10 @@ After the installation is complete, execute the following command to configure t
 ```bash
 sudo ln -s /usr/lib/aarch64-linux-gnu/librga.so.2.1.0 /usr/lib/aarch64-linux-gnu/librga.so
 sudo ln -s /usr/lib/aarch64-linux-gnu/libdrm.so.2.123.0 /usr/lib/aarch64-linux-gnu/libdrm.so
-sudo rm /usr/lib/aarch64-linux-gnu/libavformat.* 
-sudo rm /usr/lib/aarch64-linux-gnu/libavutil.*
-sudo rm /usr/lib/aarch64-linux-gnu/libswscale.*
-sudo rm /usr/lib/aarch64-linux-gnu/libpostproc.*
-sudo rm /usr/lib/aarch64-linux-gnu/libavdevice.*
-sudo rm /usr/lib/aarch64-linux-gnu/libswresample.*
-sudo rm /usr/lib/aarch64-linux-gnu/libavfilter.*
-sudo rm /usr/lib/aarch64-linux-gnu/libavcodec*
 ```
 #### 2.1.2 X86 Board
-install dependency library, for example:
-```bash
-sudo apt-get update
-sudo apt-get install libavformat-dev libavdevice-dev libavcodec-dev
-```
-
+If use GPU to compression the jpeg image, you should install the third library: https://github.com/CESNET/GPUJPEG 
 #### 2.1.3 Jetson Orin Platform
-
-When building and running on the Jetson Orin platform, install dependency library, for example:
-
-```shell
-sudo apt-get update
-sudo apt-get install libavformat-dev libavdevice-dev libavcodec-dev
-```
 
 ensure that the CUDA environment is properly installed. Follow these steps:
 
@@ -83,7 +63,7 @@ sudo apt-get install nvidia-cuda-toolkit
 nvcc --version
 ```
 
-3. Ensure that ROS2 and OpenCV dependencies are installed.
+3. Ensure that ROS2 and OpenCV dependencies are installed. If use GPU to compression the jpeg image, you should install the third library: https://github.com/CESNET/GPUJPEG 
 
 4. Follow the instructions in section 2.1.3 to build the project.
 
@@ -96,7 +76,6 @@ colcon build
 
 # Or build individually
 colcon build --symlink-install --packages-select robosense_msgs
-colcon build --symlink-install --packages-select ac_codec
 colcon build --symlink-install --packages-select ac_driver
 ```
 
@@ -119,29 +98,37 @@ Replace `<your_domain_id>` with the appropriate domain ID for your ROS 2 environ
 The ac_driver node can bu run using the ros run command. 
 
 ```sh
-roslaunch ac_driver start.launch 
-or 
-roscore 2>&1 >/dev/null &
-rosrun ac_driver ms_node [_device_interface:="usb" _image_input_fps:=30 _imu_input_fps:=200 _enable_jpeg:=false _jpeg_quality:=70 _topic_prefix:="" _serial_number:="" _gmsl_device_number:="/dev/video30" _angle_calib_basic_dir_path:="" _device_manager_debug:=false _point_frame_id:="rslidar" _ac1_image_frame_id:="rslidar"  _ac2_left_image_frame_id:="rslidar" _ac2_right_image_frame_id:="rslidar"  _imu_frame_id:="rslidar"  _enable_use_lidar_clock:=false  _enable_use_dense_points:=false  _enable_use_first_point_ts:= false _timestamp_output_dir_path:=""]
+For AC1: 
+roslaunch ac_driver start_ac1.launch start_rviz_node:=false|true 
+
+For AC2: 
+roslaunch ac_driver start_ac2_usb.launch start_rviz_node:=false|true 
+roslaunch ac_driver start_ac2_gmsl.launch start_rviz_node:=false|true 
 ```
 
 The ac_driver node can be run using the ros2 run command.
 
 1. Non-zero-copy mode
 ```bash
-ros2 run ac_driver ms_node [--ros-args --param device_interface:="usb" --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false --param jpeg_quality:=70 --param topic_prefix:="" --param serial_number:="" --param gmsl_device_number="/dev/video30" --param angle_calib_basic_dir_path:="" --param device_manager_debug:=false --param point_frame_id:="rslidar" --param ac1_image_frame_id:="rslidar" --param ac2_left_image_frame_id:="rslidar" --param ac2_right_image_frame_id:="rslidar" --param imu_frame_id:="rslidar" --param enable_use_lidar_clock:=false --param enable_use_dense_points:=false --param enable_use_first_point_ts:= false --param timestamp_output_dir_path:=""]
-or 
-ros2 launch ac_driver start.launch.py 
+Step1: setting enable_ros2_zero_copy is false
+For AC1: 
+ros2 launch ac_driver start_ac1.launch.py start_rviz_node:=false|true 
+For AC2: 
+ros2 launch ac_driver start_ac2_usb.launch.py start_rviz_node:=false|true 
+ros2 launch ac_driver start_ac2_gmsl.launch.py start_rviz_node:=false|true 
 ```
-2. Zero-copy mode (only for ROS2 Humble)
+2. Zero-copy mode (only for ROS2 Humble With FastDDS)
 ```bash
+Step1: envirnment setting 
 export FASTRTPS_DEFAULT_PROFILES_FILE=ac_driver/conf/shm_fastdds.xml
 export RMW_FASTRTPS_USE_QOS_FROM_XML=1
-ros2 run ac_driver ms_node [--ros-args --param device_interface:="usb" --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false --param jpeg_quality:=70 --param topic_prefix:="" --param serial_number:="" --param gmsl_device_number="/dev/video30" --param angle_calib_basic_dir_path:="" --param device_manager_debug:=false --param point_frame_id:="rslidar" --param ac1_image_frame_id:="rslidar" --param ac2_left_image_frame_id:="rslidar" --param ac2_right_image_frame_id:="rslidar" --param imu_frame_id:="rslidar" --param enable_use_lidar_clock:=false --param enable_use_dense_points:=false --param enable_use_first_point_ts:= false --param timestamp_output_dir_path:=""]
-或
-export FASTRTPS_DEFAULT_PROFILES_FILE=ac_driver/conf/shm_fastdds.xml
-export RMW_FASTRTPS_USE_QOS_FROM_XML=1
-ros2 launch ac_driver start.launch.py
+
+Step2: setting enable_ros2_zero_copy is true 
+For AC1: 
+ros2 launch ac_driver start_ac1.launch.py start_rviz_node:=false|true 
+For AC2: 
+ros2 launch ac_driver start_ac2_usb.launch.py start_rviz_node:=false|true 
+ros2 launch ac_driver start_ac2_gmsl.launch.py start_rviz_node:=false|true 
 ```
 
 #### Parameter Description
@@ -165,15 +152,18 @@ ros2 launch ac_driver start.launch.py
 - device_calib_file_path: The offline device calibration file path. The default value is ""(empty string); 
 - device_manager_debug: Whether enable debug mode, The default value is false 
 - enable_use_lidar_clock: Whether using device time clock , The default value is false 
+- timestamp_compensate_s: If enable_use_lidar_clock = true, then the timestamp compensate value. The default value is 0.0, unit is second(s) 
 - enable_use_dense_points：Whether enable output dense point mode，The default value is false 
 - enable_use_first_point_ts：Whether using the first point timestamp as pointcloud frame timestamp，The default value is false 
 - enable_ac2_pointcloud_wave_split: Whether Split AC2 PointCloud By Wave Number, The default value is false  
 - timestamp_output_dir_path: The timestamp statistical output directory path, if is empty that means no statistical output 
+- enable_ros2_zero_copy:  Whether Using Ros2 Zero-Copy Send Message. The default value is false. 
 - enable_pointcloud_send: Whether send PointCloud message by ROS/ROS2, The default value is true  
 - enable_ac1_image_send: Whether send AC Image message by ROS/ROS2, The default value is true 
 - enable_ac2_left_image_send: Whether send AC2 left image message by ROS/ROS2, The default value is true 
 - enable_ac2_right_image_send: Whether send AC2 right image message by ROS/ROS2, The default value is true 
 - enable_imu_send: Whether send IMU message by ROS/ROS2, The default value is true 
+- spdlog setting: log_file_dir_path/log_level/is_log_file_trunc: log output directory path/log output minimum level, default is 2(INFO)/whether truncate file if   log file exist 
 - ac1_crop_top/ac1_crop_bottom/ac1_crop_left/ac1_crop_right: AC1 image crop setting, The default value is 0 that means don't crop 
 - ac2_left_crop_top/ac2_left_crop_bottom/ac2_left_crop_left/ac2_left_crop_right: AC2 left image crop setting, The default value is 0 that means don't crop
 -  ac2_right_crop_top/ac2_right_crop_bottom/ac2_right_crop_left/ac2_right_crop_right, AC2 right image crop setting, The default value is 0 that means don't crop 

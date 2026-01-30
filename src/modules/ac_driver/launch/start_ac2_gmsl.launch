@@ -34,22 +34,22 @@
     <param name="imu_frame_id" value="rslidar" />
     <!--Wheter AC2 Angle Calib File from Device --> 
     <param name ="enable_angle_and_device_calib_info_from_device" value="true" />
-    <!-- Whether AC2 calibration basic directory path -->
+    <!-- Whether AC2 calibration basic directory path: e.g. $(find ac_driver)/conf/angle/ -->
     <param name="angle_calib_basic_dir_path" value="" />
     <!-- Wether Enable AC2 Device Calib Info From Device Pripority -->
     <param name="enable_device_calib_info_from_device_pripority" value="true" />
-    <!-- Whether AC2 image calibaration file path -->
+    <!-- Whether AC2 image calibaration file path: e.g. $(find ac_driver)/conf/calibration.yaml -->
     <param name="device_calib_file_path" value="" />
     <!-- Whether Enable Device Manager Debug Mode -->
     <param name="device_manager_debug" value="false" />
     <!-- Whether Use Lidar Clock -->
-    <param name="enable_use_lidar_clock" value="true" />
-    <!-- Whether Componsate ROS2 Message Timestamp: not support now !!! --> 
-    <param name="ros_stamp_compensate_ns" value="0" />
+    <param name="enable_use_lidar_clock" value="false" />
+    <!-- Whether Componsate ROS Message Timestamp: Unit second --> 
+    <param name="timestamp_compensate_s" value="0.0" />
     <!-- Wether Use Dense Points -->
     <param name="enable_use_dense_points" value="false" />
     <!-- Wether Use First Point Timestamp As PointCloud Frame Timestamp -->
-    <param name="enable_use_first_point_ts" value="true" />
+    <param name="enable_use_first_point_ts" value="false" />
     <!-- Wether Enable PointCloud Split By Wave Number -->
     <param name="enable_ac2_pointcloud_wave_split" value="false" />
     <!-- Wether Enable ZeroCopy: Ros1 Must False !!! --> 
@@ -66,6 +66,12 @@
     <param name="enable_ac2_right_image_send" value="true" />
     <!-- Whether Output Imu By Ros -->
     <param name="enable_imu_send" value="true" />
+    <!-- Whether Output SPDLOG To Directory: e.g. $(find ac_driver)/log/ --> 
+    <param name="log_file_dir_path" value="" />
+    <!-- Output Log Level, default is 2(info): 0: trace; 1: debug; 2: info; 3: warn; 4: error; 5: fatal --> 
+    <param name="log_level" value="2" />
+    <!-- Whether Output SPDLOG File Truncate if log file exist --> 
+    <param name="is_log_file_trunc" value="true" />
     <!-- Whether AC1 Crop Top -->
     <param name="ac1_crop_top" value="0" />
     <!-- Whether AC1 Crop Bottom -->
@@ -122,10 +128,10 @@
     <param name="distance_diff_threshold" value="50" /> 
     <!-- Whether AC2 delete_intensity_threshold -->
     <param name="delete_intensity_threshold" value="200" />
-    <!-- Whether AC2 edge_threshold_0 -->
-    <param name="edge_threshold_0" value="2000" />
-    <!-- Whether AC2 edge_threshold_1 -->
-    <param name="edge_threshold_1" value="200" />
+    <!-- Whether AC2 edge_thresholds_0 -->
+    <param name="edge_thresholds_0" value="2000" />
+    <!-- Whether AC2 edge_thresholds_1 -->
+    <param name="edge_thresholds_1" value="200" />
     <!-- Whether AC2 intensity_mutation_thresholds_0 -->
     <param name="intensity_mutation_thresholds_0" value="50" />
     <!-- Whether AC2 intensity_mutation_thresholds_1 -->
@@ -144,9 +150,9 @@
     <param name="fwhm_threshold_2" value="85" />
     <param name="fwhm_threshold_3" value="80" />
     <!-- Whether AC2 edge_thresholds[0-2] -->
-    <param name="edge_thresholds_0" value="200" />
-    <param name="edge_thresholds_1" value="500" />
-    <param name="edge_thresholds_2" value="4000" />
+    <param name="detrail_edge_thresholds_0" value="200" />
+    <param name="detrail_edge_thresholds_1" value="500" />
+    <param name="detrail_edge_thresholds_2" value="4000" />
     <!-- Whether AC2 distance_thresholds[0-2] -->
     <param name="distance_thresholds_0" value="600" />
     <param name="distance_thresholds_1" value="1000" />
@@ -173,5 +179,8 @@
   </node>
 
   <!-- rviz -->
-  <node pkg="rviz" name="rviz" type="rviz" args="-d $(find ac_driver)/rviz/rviz.rviz" />
+  <arg name="start_rviz_node" default="false"/>
+  <group if="$(arg start_rviz_node)"> 
+    <node pkg="rviz" name="rviz" type="rviz" args="-d $(find ac_driver)/rviz/rviz.rviz" />
+  </group>
 </launch>

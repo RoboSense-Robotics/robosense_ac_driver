@@ -26,12 +26,13 @@
  * - IMU data on the "/rs_imu" topic
  */
 
-#include "hyper_vision/devicemanager/devicemanager.h"
-#include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <queue>
+#include <thread>
 #include <vector>
 
 #ifdef RK3588
@@ -40,13 +41,9 @@
 #else
 #include "hyper_vision/codec/colorcodec.h"
 #include "hyper_vision/codec/jpegcoder.h"
-#include <condition_variable>
-#include <queue>
-#include <thread>
 #endif
-
-#include "convertmanager.hpp"
-#include <yaml-cpp/yaml.h>
+#include "hyper_vision/devicemanager/devicemanager.h"
+#include "rosmanager.hpp"
 
 enum class RS_IMAGE_SOURCE_TYPE : int {
   RS_IMAGE_SOURCE_AC1 = 0,
@@ -157,12 +154,12 @@ public:
     if (ret != 0) {
       const std::string &error_info =
           "Initial Driver Parameter(s) Failed: ret = " + std::to_string(ret);
-      logError(error_info);
+      RS_SPDLOG_ERROR(error_info);
       return -1;
     } else {
       const std::string &error_info =
           "Initial Driver Parameter(s) Successed ! ";
-      logInfo(error_info);
+      RS_SPDLOG_INFO(error_info);
     }
 
     // Initial Device Manager
@@ -170,12 +167,12 @@ public:
     if (ret != 0) {
       const std::string &error_info =
           "Initial Driver Device Manager Failed: ret = " + std::to_string(ret);
-      logError(error_info);
+      RS_SPDLOG_ERROR(error_info);
       return -2;
     } else {
       const std::string &error_info =
           "Initial Driver Device Manager Successed ! ";
-      logInfo(error_info);
+      RS_SPDLOG_INFO(error_info);
     }
 
     // GMSL Open
@@ -191,17 +188,17 @@ public:
         const std::string &error_info =
             "Open Device: gmsl_device_number = " + gmsl_device_number +
             " Failed !";
-        logError(error_info);
+        RS_SPDLOG_ERROR(error_info);
         return -3;
       } else {
         const std::string &error_info =
             "Open Device: gmsl_device_number = " + gmsl_device_number +
             " Successed !";
-        logInfo(error_info);
+        RS_SPDLOG_INFO(error_info);
       }
     }
 
-    logInfo("Driver Initial Successed !");
+    RS_SPDLOG_INFO("Driver Initial Successed !");
 
     return 0;
   }
@@ -242,10 +239,8 @@ private:
     private_nh.param<bool>("device_manager_debug", device_manager_debug, false);
     private_nh.param<bool>("enable_use_lidar_clock", enable_use_lidar_clock,
                            false);
-    double ros_stamp_compensate_ns_d = 0;
-    private_nh.param<double>("ros_stamp_compensate_ns",
-                             ros_stamp_compensate_ns_d, 0.0);
-    ros_stamp_compensate_ns = ros_stamp_compensate_ns_d;
+    private_nh.param<double>("timestamp_compensate_s", timestamp_compensate_s,
+                             0.0);
     private_nh.param<bool>("enable_use_dense_points", enable_use_dense_points,
                            false);
     private_nh.param<bool>("enable_use_first_point_ts",
@@ -265,6 +260,14 @@ private:
     private_nh.param<bool>("enable_ac2_right_image_send",
                            enable_ac2_right_image_send, true);
     private_nh.param<bool>("enable_imu_send", enable_imu_send, true);
+    // spdlog
+    log_config.reset();
+    private_nh.param<std::string>("log_file_dir_path",
+                                  log_config.log_file_dir_path, "");
+    private_nh.param<int32_t>("log_level", log_config.log_level, 2);
+    private_nh.param<bool>("is_log_file_trunc", log_config.is_log_file_trunc,
+                           true);
+    // ac1 crop
     int32_t ac1_crop_top, ac1_crop_bottom, ac1_crop_left, ac1_crop_right;
     private_nh.param<int32_t>("ac1_crop_top", ac1_crop_top, 0);
     private_nh.param<int32_t>("ac1_crop_bottom", ac1_crop_bottom, 0);
@@ -272,7 +275,7 @@ private:
     private_nh.param<int32_t>("ac1_crop_right", ac1_crop_right, 0);
     ac1_crop_config.updateCrop(ac1_crop_top, ac1_crop_bottom, ac1_crop_left,
                                ac1_crop_right);
-
+    // ac2 left crop
     int32_t ac2_left_crop_top, ac2_left_crop_bottom, ac2_left_crop_left,
         ac2_left_crop_right;
     private_nh.param<int32_t>("ac2_left_crop_top", ac2_left_crop_top, 0);
@@ -281,7 +284,7 @@ private:
     private_nh.param<int32_t>("ac2_left_crop_right", ac2_left_crop_right, 0);
     ac2_left_crop_config.updateCrop(ac2_left_crop_top, ac2_left_crop_bottom,
                                     ac2_left_crop_left, ac2_left_crop_right);
-
+    // ac2 right crop
     int32_t ac2_right_crop_top, ac2_right_crop_bottom, ac2_right_crop_left,
         ac2_right_crop_right;
     private_nh.param<int32_t>("ac2_right_crop_top", ac2_right_crop_top, 0);
@@ -339,7 +342,7 @@ private:
     private_nh.param<bool>("enable_debloom",
                            algorithm_param.debloom_param.enable_debloom, false);
     int32_t search_range, distance_diff_threshold, delete_intensity_threshold,
-        edge_threshold_0, edge_threshold_1, intensity_mutation_thresholds_0,
+        edge_thresholds_0, edge_thresholds_1, intensity_mutation_thresholds_0,
         intensity_mutation_thresholds_1, target_intensity_thresholds_0,
         target_intensity_thresholds_1, target_intensity_thresholds_2;
     private_nh.param<int32_t>("search_range", search_range, 5);
@@ -352,10 +355,10 @@ private:
                               delete_intensity_threshold, 80);
     algorithm_param.debloom_param.delete_intensity_threshold =
         delete_intensity_threshold;
-    private_nh.param<int32_t>("edge_threshold_0", edge_threshold_0, 1000);
-    algorithm_param.debloom_param.edge_thresholds[0] = edge_threshold_0;
-    private_nh.param<int32_t>("edge_threshold_1", edge_threshold_1, 1000);
-    algorithm_param.debloom_param.edge_thresholds[1] = edge_threshold_1;
+    private_nh.param<int32_t>("edge_thresholds_0", edge_thresholds_0, 1000);
+    algorithm_param.debloom_param.edge_thresholds[0] = edge_thresholds_0;
+    private_nh.param<int32_t>("edge_thresholds_1", edge_thresholds_1, 1000);
+    algorithm_param.debloom_param.edge_thresholds[1] = edge_thresholds_1;
     private_nh.param<int32_t>("intensity_mutation_thresholds_0",
                               intensity_mutation_thresholds_0, 50);
     private_nh.param<int32_t>("intensity_mutation_thresholds_1",
@@ -381,7 +384,8 @@ private:
                            algorithm_param.detrail_param.enable_detrail, false);
     int32_t fwhm_thresholds_0, fwhm_thresholds_1, fwhm_thresholds_2,
         fwhm_thresholds_3;
-    int32_t edge_thresholds_0, edge_thresholds_1, edge_thresholds_2;
+    int32_t detrail_edge_thresholds_0, detrail_edge_thresholds_1,
+        detrail_edge_thresholds_2;
     int32_t distance_thresholds_0, distance_thresholds_1, distance_thresholds_2;
     int32_t noise_thresholds_0, noise_thresholds_1;
     int32_t peak_value_threshold;
@@ -394,12 +398,18 @@ private:
     algorithm_param.detrail_param.fwhm_thresholds[1] = fwhm_thresholds_1;
     algorithm_param.detrail_param.fwhm_thresholds[2] = fwhm_thresholds_2;
     algorithm_param.detrail_param.fwhm_thresholds[3] = fwhm_thresholds_3;
-    private_nh.param<int32_t>("edge_thresholds_0", edge_thresholds_0, 200);
-    private_nh.param<int32_t>("edge_thresholds_1", edge_thresholds_1, 500);
-    private_nh.param<int32_t>("edge_thresholds_2", edge_thresholds_2, 4000);
-    algorithm_param.detrail_param.edge_thresholds[0] = edge_thresholds_0;
-    algorithm_param.detrail_param.edge_thresholds[1] = edge_thresholds_1;
-    algorithm_param.detrail_param.edge_thresholds[2] = edge_thresholds_2;
+    private_nh.param<int32_t>("detrail_edge_thresholds_0",
+                              detrail_edge_thresholds_0, 200);
+    private_nh.param<int32_t>("detrail_edge_thresholds_1",
+                              detrail_edge_thresholds_1, 500);
+    private_nh.param<int32_t>("detrail_edge_thresholds_2",
+                              detrail_edge_thresholds_2, 4000);
+    algorithm_param.detrail_param.edge_thresholds[0] =
+        detrail_edge_thresholds_0;
+    algorithm_param.detrail_param.edge_thresholds[1] =
+        detrail_edge_thresholds_1;
+    algorithm_param.detrail_param.edge_thresholds[2] =
+        detrail_edge_thresholds_2;
     private_nh.param<int32_t>("distance_thresholds_0", distance_thresholds_0,
                               600);
     private_nh.param<int32_t>("distance_thresholds_1", distance_thresholds_1,
@@ -444,322 +454,190 @@ private:
     algorithm_param.frame_filter_param.stationary_ratio = stationary_ratio;
 #endif // defined(ENABLE_SUPPORT_RS_DRIVER_ALGORITHM)
 #elif defined(ROS2_FOUND)
-    this->declare_parameter<std::string>("device_interface", "usb");
-    this->declare_parameter<int32_t>("image_input_fps", 30);
-    this->declare_parameter<int32_t>("imu_input_fps", 200);
-    this->declare_parameter<bool>("enable_jpeg", false);
-    this->declare_parameter<bool>("enable_rectify", false);
-    this->declare_parameter<bool>("enable_rectify_jpeg", false);
-    this->declare_parameter<int32_t>("jpeg_quality", 70);
-    this->declare_parameter<std::string>("topic_prefix", "");
-    this->declare_parameter<std::string>("serial_number", "");
-    this->declare_parameter<std::string>("gmsl_device_number", "/dev/video30");
-    this->declare_parameter<std::string>("point_frame_id", "rslidar");
-    this->declare_parameter<std::string>("ac1_image_frame_id", "rslidar");
-    this->declare_parameter<std::string>("ac2_left_image_frame_id", "rslidar");
-    this->declare_parameter<std::string>("ac2_right_image_frame_id", "rslidar");
-    this->declare_parameter<std::string>("imu_frame_id", "rslidar");
-    this->declare_parameter<bool>(
-        "enable_angle_and_device_calib_info_from_device", false);
-    this->declare_parameter<std::string>("angle_calib_basic_dir_path", "");
-    this->declare_parameter<bool>(
-        "enable_device_calib_info_from_device_pripority", false);
-    this->declare_parameter<std::string>("device_calib_file_path", "");
-    this->declare_parameter<bool>("device_manager_debug", false);
-    this->declare_parameter<bool>("enable_use_lidar_clock", false);
-    this->declare_parameter<int64_t>("ros_stamp_compensate_ns", 0);
-    this->declare_parameter<bool>("enable_use_dense_points", false);
-    this->declare_parameter<bool>("enable_use_first_point_ts", false);
-    this->declare_parameter<bool>("enable_ac2_pointcloud_wave_split", false);
-    this->declare_parameter<bool>("enable_ros2_zero_copy", false);
-    this->declare_parameter<std::string>("timestamp_output_dir_path", "");
-    this->declare_parameter<bool>("enable_pointcloud_send", true);
-    this->declare_parameter<bool>("enable_ac1_image_send", true);
-    this->declare_parameter<bool>("enable_ac2_left_image_send", true);
-    this->declare_parameter<bool>("enable_ac2_right_image_send", true);
-    this->declare_parameter<bool>("enable_imu_send", true);
-    // ac1
-    this->declare_parameter<int32_t>("ac1_crop_top", 0);
-    this->declare_parameter<int32_t>("ac1_crop_bottom", 0);
-    this->declare_parameter<int32_t>("ac1_crop_left", 0);
-    this->declare_parameter<int32_t>("ac1_crop_right", 0);
-    // ac2 left
-    this->declare_parameter<int32_t>("ac2_left_crop_top", 0);
-    this->declare_parameter<int32_t>("ac2_left_crop_bottom", 0);
-    this->declare_parameter<int32_t>("ac2_left_crop_left", 0);
-    this->declare_parameter<int32_t>("ac2_left_crop_right", 0);
-    // ac2 right
-    this->declare_parameter<int32_t>("ac2_right_crop_top", 0);
-    this->declare_parameter<int32_t>("ac2_right_crop_bottom", 0);
-    this->declare_parameter<int32_t>("ac2_right_crop_left", 0);
-    this->declare_parameter<int32_t>("ac2_right_crop_right", 0);
-    // AC2 Denoise parameter
-    this->declare_parameter<bool>("enable_denoise", false);
-    this->declare_parameter<bool>("enable_smooth", false);
-    this->declare_parameter<int32_t>("dist_x_win_cfg", 1);
-    this->declare_parameter<int32_t>("dist_y_win_cfg", 1);
-    this->declare_parameter<int32_t>("dist_valid_thresholds_0", 3);
-    this->declare_parameter<int32_t>("dist_valid_thresholds_1", 3);
-    this->declare_parameter<int32_t>("dist_valid_thresholds_2", 3);
-    this->declare_parameter<int32_t>("dist_valid_thresholds_3", 2);
-    this->declare_parameter<int32_t>("dist_valid_thresholds_4", 2);
-    this->declare_parameter<int32_t>("max_process_distance", 65535);
-    this->declare_parameter<int32_t>("min_process_distance", 0);
-    // AC2 Edge parameter
-    this->declare_parameter<int32_t>("edge_kernel_size", 3);
-    // AC2 Deblooming parameter
-    this->declare_parameter<bool>("enable_debloom", false);
-    this->declare_parameter<int32_t>("search_range", 5);
-    this->declare_parameter<int32_t>("distance_diff_threshold", 50);
-    this->declare_parameter<int32_t>("delete_intensity_threshold", 200);
-    this->declare_parameter<int32_t>("edge_threshold_0", 2000);
-    this->declare_parameter<int32_t>("edge_threshold_1", 200);
-    this->declare_parameter<int32_t>("intensity_mutation_thresholds_0", 50);
-    this->declare_parameter<int32_t>("intensity_mutation_thresholds_1", 36);
-    this->declare_parameter<int32_t>("target_intensity_thresholds_0", 10);
-    this->declare_parameter<int32_t>("target_intensity_thresholds_1", 45);
-    this->declare_parameter<int32_t>("target_intensity_thresholds_2", 100);
-    // AC2 Trail parameter
-    this->declare_parameter<bool>("enable_detrail", false);
-    this->declare_parameter<int32_t>("fwhm_thresholds_0", 95);
-    this->declare_parameter<int32_t>("fwhm_thresholds_1", 90);
-    this->declare_parameter<int32_t>("fwhm_thresholds_2", 85);
-    this->declare_parameter<int32_t>("fwhm_thresholds_3", 80);
-    this->declare_parameter<int32_t>("edge_thresholds_0", 200);
-    this->declare_parameter<int32_t>("edge_thresholds_1", 500);
-    this->declare_parameter<int32_t>("edge_thresholds_2", 4000);
-    this->declare_parameter<int32_t>("distance_thresholds_0", 600);
-    this->declare_parameter<int32_t>("distance_thresholds_1", 1000);
-    this->declare_parameter<int32_t>("distance_thresholds_2", 1500);
-    this->declare_parameter<int32_t>("noise_thresholds_0", 15);
-    this->declare_parameter<int32_t>("noise_thresholds_1", 200);
-    this->declare_parameter<int32_t>("peak_value_threshold", 10);
-    this->declare_parameter<int32_t>("detrail_distance_diff_threshold", 30);
-    // AC2 Frame filter parameter
-    this->declare_parameter<bool>("enable_frame_filter", false);
-    this->declare_parameter<bool>("enable_save_raw_data", false);
-    this->declare_parameter<int32_t>("smooth_frame_count", 5);
-    this->declare_parameter<int32_t>("imu_motion_detect_frame_count", 5);
-    this->declare_parameter<int32_t>("imu_motion_threshold", 3);
-    this->declare_parameter<int32_t>("stationary_ratio", 10);
-
     device_interface =
-        this->get_parameter("device_interface").get_value<std::string>();
-    image_input_fps =
-        this->get_parameter("image_input_fps").get_value<int32_t>();
-    imu_input_fps = this->get_parameter("imu_input_fps").get_value<int32_t>();
-    enable_jpeg = this->get_parameter("enable_jpeg").get_value<bool>();
-    enable_rectify = this->get_parameter("enable_rectify").get_value<bool>();
-    enable_rectify_jpeg =
-        this->get_parameter("enable_rectify_jpeg").get_value<bool>();
-    jpeg_quality = this->get_parameter("jpeg_quality").get_value<int32_t>();
-    topic_prefix = this->get_parameter("topic_prefix").get_value<std::string>();
-    serial_number =
-        this->get_parameter("serial_number").get_value<std::string>();
+        declare_parameter<std::string>("device_interface", "usb");
+    image_input_fps = declare_parameter<int32_t>("image_input_fps", 30);
+    imu_input_fps = declare_parameter<int32_t>("imu_input_fps", 200);
+    enable_jpeg = declare_parameter<bool>("enable_jpeg", false);
+    enable_rectify = declare_parameter<bool>("enable_rectify", false);
+    enable_rectify_jpeg = declare_parameter<bool>("enable_rectify_jpeg", false);
+    jpeg_quality = declare_parameter<int32_t>("jpeg_quality", 70);
+    topic_prefix = declare_parameter<std::string>("topic_prefix", "");
+    serial_number = declare_parameter<std::string>("serial_number", "");
     gmsl_device_number =
-        this->get_parameter("gmsl_device_number").get_value<std::string>();
+        declare_parameter<std::string>("gmsl_device_number", "/dev/video30");
     point_frame_id =
-        this->get_parameter("point_frame_id").get_value<std::string>();
+        declare_parameter<std::string>("point_frame_id", "rslidar");
     ac1_image_frame_id =
-        this->get_parameter("ac1_image_frame_id").get_value<std::string>();
+        declare_parameter<std::string>("ac1_image_frame_id", "rslidar");
     ac2_left_image_frame_id =
-        this->get_parameter("ac2_left_image_frame_id").get_value<std::string>();
-    ac2_right_image_frame_id = this->get_parameter("ac2_right_image_frame_id")
-                                   .get_value<std::string>();
-    imu_frame_id = this->get_parameter("imu_frame_id").get_value<std::string>();
-    enable_angle_and_device_calib_info_from_device =
-        this->get_parameter("enable_angle_and_device_calib_info_from_device")
-            .get_value<bool>();
+        declare_parameter<std::string>("ac2_left_image_frame_id", "rslidar");
+    ac2_right_image_frame_id =
+        declare_parameter<std::string>("ac2_right_image_frame_id", "rslidar");
+    imu_frame_id = declare_parameter<std::string>("imu_frame_id", "rslidar");
+    enable_angle_and_device_calib_info_from_device = declare_parameter<bool>(
+        "enable_angle_and_device_calib_info_from_device", true);
     angle_calib_basic_dir_path =
-        this->get_parameter("angle_calib_basic_dir_path")
-            .get_value<std::string>();
-    enable_device_calib_info_from_device_pripority =
-        this->get_parameter("enable_device_calib_info_from_device_pripority")
-            .get_value<bool>();
+        declare_parameter<std::string>("angle_calib_basic_dir_path", "");
+    enable_device_calib_info_from_device_pripority = declare_parameter<bool>(
+        "enable_device_calib_info_from_device_pripority", true);
     device_calib_file_path =
-        this->get_parameter("device_calib_file_path").get_value<std::string>();
+        declare_parameter<std::string>("device_calib_file_path", "");
     device_manager_debug =
-        this->get_parameter("device_manager_debug").get_value<bool>();
+        declare_parameter<bool>("device_manager_debug", false);
     enable_use_lidar_clock =
-        this->get_parameter("enable_use_lidar_clock").get_value<bool>();
-    ros_stamp_compensate_ns =
-        this->get_parameter("ros_stamp_compensate_ns").get_value<int64_t>();
+        declare_parameter<bool>("enable_use_lidar_clock", false);
+    timestamp_compensate_s =
+        declare_parameter<double>("timestamp_compensate_s", 0.0);
     enable_use_dense_points =
-        this->get_parameter("enable_use_dense_points").get_value<bool>();
+        declare_parameter<bool>("enable_use_dense_points", false);
     enable_use_first_point_ts =
-        this->get_parameter("enable_use_first_point_ts").get_value<bool>();
+        declare_parameter<bool>("enable_use_first_point_ts", false);
     enable_ac2_pointcloud_wave_split =
-        this->get_parameter("enable_ac2_pointcloud_wave_split")
-            .get_value<bool>();
+        declare_parameter<bool>("enable_ac2_pointcloud_wave_split", false);
     enable_ros2_zero_copy =
-        this->get_parameter("enable_ros2_zero_copy").get_value<bool>();
-    timestamp_output_dir_path = this->get_parameter("timestamp_output_dir_path")
-                                    .get_value<std::string>();
+        declare_parameter<bool>("enable_ros2_zero_copy", false);
+    timestamp_output_dir_path =
+        declare_parameter<std::string>("timestamp_output_dir_path", "");
     enable_pointcloud_send =
-        this->get_parameter("enable_pointcloud_send").get_value<bool>();
+        declare_parameter<bool>("enable_pointcloud_send", true);
     enable_ac1_image_send =
-        this->get_parameter("enable_ac1_image_send").get_value<bool>();
+        declare_parameter<bool>("enable_ac1_image_send", true);
     enable_ac2_left_image_send =
-        this->get_parameter("enable_ac2_left_image_send").get_value<bool>();
+        declare_parameter<bool>("enable_ac2_left_image_send", true);
     enable_ac2_right_image_send =
-        this->get_parameter("enable_ac2_right_image_send").get_value<bool>();
-    enable_imu_send = this->get_parameter("enable_imu_send").get_value<bool>();
-    // ac1
+        declare_parameter<bool>("enable_ac2_right_image_send", true);
+    enable_imu_send = declare_parameter<bool>("enable_imu_send", true);
+    // spdlog
+    log_config.reset();
+    log_config.log_file_dir_path =
+        declare_parameter<std::string>("log_file_dir_path", "");
+    log_config.log_level = declare_parameter<int32_t>("log_level", 2);
+    log_config.is_log_file_trunc =
+        declare_parameter<bool>("is_log_file_trunc", true);
+    // ac1 crop
     int32_t ac1_crop_top, ac1_crop_bottom, ac1_crop_left, ac1_crop_right;
-    ac1_crop_top = this->get_parameter("ac1_crop_top").get_value<int32_t>();
-    ac1_crop_bottom =
-        this->get_parameter("ac1_crop_bottom").get_value<int32_t>();
-    ac1_crop_left = this->get_parameter("ac1_crop_left").get_value<int32_t>();
-    ac1_crop_right = this->get_parameter("ac1_crop_right").get_value<int32_t>();
+    ac1_crop_top = declare_parameter<int32_t>("ac1_crop_top", 0);
+    ac1_crop_bottom = declare_parameter<int32_t>("ac1_crop_bottom", 0);
+    ac1_crop_left = declare_parameter<int32_t>("ac1_crop_left", 0);
+    ac1_crop_right = declare_parameter<int32_t>("ac1_crop_right", 0);
     ac1_crop_config.updateCrop(ac1_crop_top, ac1_crop_bottom, ac1_crop_left,
                                ac1_crop_right);
-    // ac1 left
+    // ac2 left crop
     int32_t ac2_left_crop_top, ac2_left_crop_bottom, ac2_left_crop_left,
         ac2_left_crop_right;
-    ac2_left_crop_top =
-        this->get_parameter("ac2_left_crop_top").get_value<int32_t>();
+    ac2_left_crop_top = declare_parameter<int32_t>("ac2_left_crop_top", 0);
     ac2_left_crop_bottom =
-        this->get_parameter("ac2_left_crop_bottom").get_value<int32_t>();
-    ac2_left_crop_left =
-        this->get_parameter("ac2_left_crop_left").get_value<int32_t>();
-    ac2_left_crop_right =
-        this->get_parameter("ac2_left_crop_right").get_value<int32_t>();
+        declare_parameter<int32_t>("ac2_left_crop_bottom", 0);
+    ac2_left_crop_left = declare_parameter<int32_t>("ac2_left_crop_left", 0);
+    ac2_left_crop_right = declare_parameter<int32_t>("ac2_left_crop_right", 0);
     ac2_left_crop_config.updateCrop(ac2_left_crop_top, ac2_left_crop_bottom,
                                     ac2_left_crop_left, ac2_left_crop_right);
-    // ac2 right
+    // ac2 right crop
     int32_t ac2_right_crop_top, ac2_right_crop_bottom, ac2_right_crop_left,
         ac2_right_crop_right;
-    ac2_right_crop_top =
-        this->get_parameter("ac2_right_crop_top").get_value<int32_t>();
+    ac2_right_crop_top = declare_parameter<int32_t>("ac2_right_crop_top", 0);
     ac2_right_crop_bottom =
-        this->get_parameter("ac2_right_crop_bottom").get_value<int32_t>();
-    ac2_right_crop_left =
-        this->get_parameter("ac2_right_crop_left").get_value<int32_t>();
+        declare_parameter<int32_t>("ac2_right_crop_bottom", 0);
+    ac2_right_crop_left = declare_parameter<int32_t>("ac2_right_crop_left", 0);
     ac2_right_crop_right =
-        this->get_parameter("ac2_right_crop_right").get_value<int32_t>();
+        declare_parameter<int32_t>("ac2_right_crop_right", 0);
     ac2_right_crop_config.updateCrop(ac2_right_crop_top, ac2_right_crop_bottom,
                                      ac2_right_crop_left, ac2_right_crop_right);
 #if defined(ENABLE_SUPPORT_RS_DRIVER_ALGORITHM)
     // AC2 Denoise parameter
     algorithm_param.denoise_param.enable_denoise =
-        this->get_parameter("enable_denoise").get_value<bool>();
+        declare_parameter<bool>("enable_denoise", false);
     algorithm_param.denoise_param.enable_smooth =
-        this->get_parameter("enable_smooth").get_value<bool>();
+        declare_parameter<bool>("enable_smooth", false);
     algorithm_param.denoise_param.dist_x_win_cfg =
-        this->get_parameter("dist_x_win_cfg").get_value<int32_t>();
+        declare_parameter<int32_t>("dist_x_win_cfg", 1);
     algorithm_param.denoise_param.dist_y_win_cfg =
-        this->get_parameter("dist_y_win_cfg").get_value<int32_t>();
+        declare_parameter<int32_t>("dist_y_win_cfg", 1);
     algorithm_param.denoise_param.dist_valid_thresholds[0] =
-        this->get_parameter("dist_valid_thresholds_0").get_value<int32_t>();
+        declare_parameter<int32_t>("dist_valid_thresholds_0", 3);
     algorithm_param.denoise_param.dist_valid_thresholds[1] =
-        this->get_parameter("dist_valid_thresholds_1").get_value<int32_t>();
+        declare_parameter<int32_t>("dist_valid_thresholds_1", 3);
     algorithm_param.denoise_param.dist_valid_thresholds[2] =
-        this->get_parameter("dist_valid_thresholds_2").get_value<int32_t>();
+        declare_parameter<int32_t>("dist_valid_thresholds_2", 3);
     algorithm_param.denoise_param.dist_valid_thresholds[3] =
-        this->get_parameter("dist_valid_thresholds_3").get_value<int32_t>();
+        declare_parameter<int32_t>("dist_valid_thresholds_3", 2);
     algorithm_param.denoise_param.dist_valid_thresholds[4] =
-        this->get_parameter("dist_valid_thresholds_4").get_value<int32_t>();
+        declare_parameter<int32_t>("dist_valid_thresholds_4", 2);
     algorithm_param.denoise_param.max_process_distance =
-        this->get_parameter("max_process_distance").get_value<int32_t>();
+        declare_parameter<int32_t>("max_process_distance", 65535);
     algorithm_param.denoise_param.min_process_distance =
-        this->get_parameter("min_process_distance").get_value<int32_t>();
+        declare_parameter<int32_t>("min_process_distance", 0);
     // AC2 Edge parameter
     algorithm_param.edge_param.edge_kernel_size =
-        this->get_parameter("edge_kernel_size").get_value<int32_t>();
+        declare_parameter<int32_t>("edge_kernel_size", 3);
     // AC2 Deblooming parameter
     algorithm_param.debloom_param.enable_debloom =
-        this->get_parameter("enable_debloom").get_value<bool>();
+        declare_parameter<bool>("enable_debloom", false);
     algorithm_param.debloom_param.search_range =
-        this->get_parameter("search_range").get_value<int32_t>();
+        declare_parameter<int32_t>("search_range", 5);
     algorithm_param.debloom_param.distance_diff_threshold =
-        this->get_parameter("distance_diff_threshold").get_value<int32_t>();
+        declare_parameter<int32_t>("distance_diff_threshold", 50);
     algorithm_param.debloom_param.delete_intensity_threshold =
-        this->get_parameter("delete_intensity_threshold").get_value<int32_t>();
+        declare_parameter<int32_t>("delete_intensity_threshold", 200);
     algorithm_param.debloom_param.edge_thresholds[0] =
-        this->get_parameter("edge_threshold_0").get_value<int32_t>();
+        declare_parameter<int32_t>("edge_thresholds_0", 2000);
     algorithm_param.debloom_param.edge_thresholds[1] =
-        this->get_parameter("edge_threshold_1").get_value<int32_t>();
+        declare_parameter<int32_t>("edge_thresholds_1", 200);
     algorithm_param.debloom_param.intensity_mutation_thresholds[0] =
-        this->get_parameter("intensity_mutation_thresholds_0")
-            .get_value<int32_t>();
+        declare_parameter<int32_t>("intensity_mutation_thresholds_0", 50);
     algorithm_param.debloom_param.intensity_mutation_thresholds[1] =
-        this->get_parameter("intensity_mutation_thresholds_1")
-            .get_value<int32_t>();
+        declare_parameter<int32_t>("intensity_mutation_thresholds_1", 36);
     algorithm_param.debloom_param.target_intensity_thresholds[0] =
-        this->get_parameter("target_intensity_thresholds_0")
-            .get_value<int32_t>();
+        declare_parameter<int32_t>("target_intensity_thresholds_0", 10);
     algorithm_param.debloom_param.target_intensity_thresholds[1] =
-        this->get_parameter("target_intensity_thresholds_1")
-            .get_value<int32_t>();
+        declare_parameter<int32_t>("target_intensity_thresholds_1", 45);
     algorithm_param.debloom_param.target_intensity_thresholds[2] =
-        this->get_parameter("target_intensity_thresholds_2")
-            .get_value<int32_t>();
-    // AC2 Detrail parameter
+        declare_parameter<int32_t>("target_intensity_thresholds_2", 100);
+    // AC2 Trail parameter
     algorithm_param.detrail_param.enable_detrail =
-        this->get_parameter("enable_detrail").get_value<bool>();
-    int32_t fwhm_thresholds_0, fwhm_thresholds_1, fwhm_thresholds_2,
-        fwhm_thresholds_3;
-    fwhm_thresholds_0 =
-        this->get_parameter("fwhm_thresholds_0").get_value<int32_t>();
-    fwhm_thresholds_1 =
-        this->get_parameter("fwhm_thresholds_1").get_value<int32_t>();
-    fwhm_thresholds_2 =
-        this->get_parameter("fwhm_thresholds_2").get_value<int32_t>();
-    fwhm_thresholds_3 =
-        this->get_parameter("fwhm_thresholds_3").get_value<int32_t>();
-    algorithm_param.detrail_param.fwhm_thresholds[0] = fwhm_thresholds_0;
-    algorithm_param.detrail_param.fwhm_thresholds[1] = fwhm_thresholds_1;
-    algorithm_param.detrail_param.fwhm_thresholds[2] = fwhm_thresholds_2;
-    algorithm_param.detrail_param.fwhm_thresholds[3] = fwhm_thresholds_3;
-    int32_t edge_thresholds_0, edge_thresholds_1, edge_thresholds_2;
-    edge_thresholds_0 =
-        this->get_parameter("edge_thresholds_0").get_value<int32_t>();
-    edge_thresholds_1 =
-        this->get_parameter("edge_thresholds_1").get_value<int32_t>();
-    edge_thresholds_2 =
-        this->get_parameter("edge_thresholds_2").get_value<int32_t>();
-    algorithm_param.detrail_param.edge_thresholds[0] = edge_thresholds_0;
-    algorithm_param.detrail_param.edge_thresholds[1] = edge_thresholds_1;
-    algorithm_param.detrail_param.edge_thresholds[2] = edge_thresholds_2;
-    int32_t distance_thresholds_0, distance_thresholds_1, distance_thresholds_2;
-    distance_thresholds_0 =
-        this->get_parameter("distance_thresholds_0").get_value<int32_t>();
-    distance_thresholds_1 =
-        this->get_parameter("distance_thresholds_1").get_value<int32_t>();
-    distance_thresholds_2 =
-        this->get_parameter("distance_thresholds_2").get_value<int32_t>();
+        declare_parameter<bool>("enable_detrail", false);
+    algorithm_param.detrail_param.fwhm_thresholds[0] =
+        declare_parameter<int32_t>("fwhm_thresholds_0", 95);
+    algorithm_param.detrail_param.fwhm_thresholds[1] =
+        declare_parameter<int32_t>("fwhm_thresholds_1", 90);
+    algorithm_param.detrail_param.fwhm_thresholds[2] =
+        declare_parameter<int32_t>("fwhm_thresholds_2", 85);
+    algorithm_param.detrail_param.fwhm_thresholds[3] =
+        declare_parameter<int32_t>("fwhm_thresholds_3", 80);
+    algorithm_param.detrail_param.edge_thresholds[0] =
+        declare_parameter<int32_t>("detrail_edge_thresholds_0", 200);
+    algorithm_param.detrail_param.edge_thresholds[1] =
+        declare_parameter<int32_t>("detrail_edge_thresholds_1", 500);
+    algorithm_param.detrail_param.edge_thresholds[2] =
+        declare_parameter<int32_t>("detrail_edge_thresholds_2", 4000);
     algorithm_param.detrail_param.distance_thresholds[0] =
-        distance_thresholds_0;
+        declare_parameter<int32_t>("distance_thresholds_0", 600);
     algorithm_param.detrail_param.distance_thresholds[1] =
-        distance_thresholds_1;
+        declare_parameter<int32_t>("distance_thresholds_1", 1000);
     algorithm_param.detrail_param.distance_thresholds[2] =
-        distance_thresholds_2;
-    int32_t noise_thresholds_0, noise_thresholds_1;
-    noise_thresholds_0 =
-        this->get_parameter("noise_thresholds_0").get_value<int32_t>();
-    noise_thresholds_1 =
-        this->get_parameter("noise_thresholds_1").get_value<int32_t>();
-    algorithm_param.detrail_param.noise_thresholds[0] = noise_thresholds_0;
-    algorithm_param.detrail_param.noise_thresholds[1] = noise_thresholds_1;
+        declare_parameter<int32_t>("distance_thresholds_2", 1500);
+    algorithm_param.detrail_param.noise_thresholds[0] =
+        declare_parameter<int32_t>("noise_thresholds_0", 15);
+    algorithm_param.detrail_param.noise_thresholds[1] =
+        declare_parameter<int32_t>("noise_thresholds_1", 200);
     algorithm_param.detrail_param.peak_value_threshold =
-        this->get_parameter("peak_value_threshold").get_value<int32_t>();
+        declare_parameter<int32_t>("peak_value_threshold", 10);
     algorithm_param.detrail_param.distance_diff_threshold =
-        this->get_parameter("detrail_distance_diff_threshold")
-            .get_value<int32_t>();
+        declare_parameter<int32_t>("detrail_distance_diff_threshold", 30);
     // AC2 Frame filter parameter
     algorithm_param.frame_filter_param.enable_frame_filter =
-        this->get_parameter("enable_frame_filter").get_value<bool>();
+        declare_parameter<bool>("enable_frame_filter", false);
     algorithm_param.frame_filter_param.enable_save_raw_data =
-        this->get_parameter("enable_save_raw_data").get_value<bool>();
+        declare_parameter<bool>("enable_save_raw_data", false);
     algorithm_param.frame_filter_param.smooth_frame_count =
-        this->get_parameter("smooth_frame_count").get_value<int32_t>();
+        declare_parameter<int32_t>("smooth_frame_count", 5);
     algorithm_param.frame_filter_param.imu_motion_detect_frame_count =
-        this->get_parameter("imu_motion_detect_frame_count")
-            .get_value<int32_t>();
+        declare_parameter<int32_t>("imu_motion_detect_frame_count", 5);
     algorithm_param.frame_filter_param.imu_motion_threshold =
-        this->get_parameter("imu_motion_threshold").get_value<int32_t>();
+        declare_parameter<int32_t>("imu_motion_threshold", 3);
     algorithm_param.frame_filter_param.stationary_ratio =
-        this->get_parameter("stationary_ratio").get_value<int32_t>();
+        declare_parameter<int32_t>("stationary_ratio", 10);
 #endif // defined(ENABLE_SUPPORT_RS_DRIVER_ALGORITHM)
 #endif // defined(ROS_ROS2_FOUND)
 
@@ -768,6 +646,13 @@ private:
     enable_ros2_zero_copy = false;
 #endif // defined(ROS_FOUND)
 
+    // Initial Log
+    int ret = initLogManager();
+    if (ret != 0) {
+      logError("Initial Log Manager Failed: ret = " + std::to_string(ret));
+      return -1;
+    }
+
     device_interface_type = robosense::device::RSDeviceInterfaceUtil::
         fromStringToDeviceInterfaceType(device_interface);
     if (device_interface_type ==
@@ -775,14 +660,14 @@ private:
         gmsl_device_number.empty()) {
       const std::string &error_info = "Setting GMSL Device Interface But Not "
                                       "Setting \"gmsl_device_number\"";
-      logError(error_info);
+      RS_SPDLOG_ERROR(error_info);
       return -1;
     }
     if (enable_ac2_pointcloud_wave_split) {
       const std::string &error_info =
           "Enable Use AC2 PointCloud Wave Split: Not Support Use Dense Points, "
           "Force enable_use_dense_points = false !";
-      logWarn(error_info);
+      RS_SPDLOG_WARN(error_info);
       enable_use_dense_points = false;
     }
 
@@ -808,8 +693,8 @@ private:
           << ", device_calib_file_path = " << device_calib_file_path
           << ", device_manager_debug = " << device_manager_debug
           << ", enable_use_lidar_clock = " << enable_use_lidar_clock
-          << ", ros_stamp_compensate_ns = "
-          << std::to_string(ros_stamp_compensate_ns)
+          << ", timestamp_compensate_s = "
+          << std::to_string(timestamp_compensate_s)
           << ", enable_use_dense_points = " << enable_use_dense_points
           << ", enable_use_first_point_ts = " << enable_use_first_point_ts
           << ", enable_ac2_pointcloud_wave_split = "
@@ -825,15 +710,38 @@ private:
           << ", ac1 crop = " << ac1_crop_config.toString()
           << ", ac2 left crop = " << ac2_left_crop_config.toString()
           << ", ac2 right crop = " << ac2_right_crop_config.toString();
-    logInfo(ofstr.str());
+    RS_SPDLOG_INFO(ofstr.str());
 
     if (!(enable_pointcloud_send || enable_ac1_image_send ||
           enable_ac2_left_image_send || enable_ac2_right_image_send ||
           enable_imu_send)) {
-      logWarn("No Any Data Need Output By ROS/ROS2, AC Driver Exit !");
+      RS_SPDLOG_WARN("No Any Data Need Output By ROS/ROS2, AC Driver Exit !");
       return -2;
     }
 
+    return 0;
+  }
+
+  int initLogManager() {
+    // 更新log文件夹路径
+    if (!log_config.log_file_dir_path.empty()) {
+      std::string tmp_topic_prefix = topic_prefix;
+      if (!topic_prefix.empty()) {
+        std::replace(tmp_topic_prefix.begin(), tmp_topic_prefix.end(), '/',
+                     '_');
+      } else {
+        tmp_topic_prefix = "ac2_log";
+      }
+      const std::string &full_file_path =
+          log_config.log_file_dir_path + "/" + tmp_topic_prefix + "_" +
+          robosense::device::RSTimeFormatUtil().currentTimeString() + ".log";
+      log_config.log_file_path = full_file_path;
+    }
+    int ret = robosense::log::RSLogManager::init(log_config);
+    if (ret != 0) {
+      RS_ERROR << "Initial Log Manager Failed: ret = " << ret << RS_REND;
+      return -1;
+    }
     return 0;
   }
 
@@ -841,7 +749,7 @@ private:
     try {
       device_manager_ptr.reset(new robosense::device::DeviceManager());
     } catch (...) {
-      logError("Malloc Device Manager Failed !");
+      RS_SPDLOG_ERROR("Malloc Device Manager Failed !");
       return -1;
     }
 
@@ -866,30 +774,29 @@ private:
     bool isSuccess =
         device_manager_ptr->init(device_interface_type, device_manager_debug);
     if (!isSuccess) {
-      logError("Device Manager Initial Failed !");
+      RS_SPDLOG_ERROR("Device Manager Initial Failed !");
       return -2;
     } else {
-      logInfo("Initial Device Manager Successed !");
+      RS_SPDLOG_INFO("Initial Device Manager Successed !");
     }
 
     return 0;
   }
 
   int initTimestampManager() {
-    const uint64_t timestamp_ns = RS_TIMESTAMP_NS;
     std::string tmp_topic_prefix = topic_prefix;
     if (!topic_prefix.empty()) {
       std::replace(tmp_topic_prefix.begin(), tmp_topic_prefix.end(), '/', '_');
     } else {
       tmp_topic_prefix = "ac2_stat";
     }
-    const std::string &full_file_path = timestamp_output_dir_path + "/" +
-                                        tmp_topic_prefix + "_" +
-                                        std::to_string(timestamp_ns) + ".csv";
+    const std::string &full_file_path =
+        timestamp_output_dir_path + "/" + tmp_topic_prefix + "_" +
+        robosense::device::RSTimeFormatUtil().currentTimeString() + ".csv";
     try {
       timestamp_manager_ptr.reset(new robosense::device::RSTimestampManager());
     } catch (...) {
-      logError("Malloc Timestamp Manager Failed !");
+      RS_SPDLOG_ERROR("Malloc Timestamp Manager Failed !");
       return -1;
     }
 
@@ -897,77 +804,13 @@ private:
     if (ret != 0) {
       const std::string &error_info =
           "Initial Timestamp Manager Failed: ret = " + std::to_string(ret);
-      logError(error_info);
+      RS_SPDLOG_ERROR(error_info);
       return -2;
     } else {
       const std::string &error_info =
           "Initial Timestamp Manager Successed: full_file_path = " +
           full_file_path;
-      logInfo(error_info);
-    }
-
-    return 0;
-  }
-
-  int stopTimestampManager() {
-    if (timestamp_manager_ptr) {
-      timestamp_manager_ptr.reset();
-    }
-    logInfo("Stop Timestamp Manager Successed !");
-    return 0;
-  }
-
-  int stopDeviceManager() {
-    if (device_manager_ptr) {
-      device_manager_ptr->stop();
-    }
-    device_manager_ptr.reset();
-    logInfo("Stop Device Manager Successed !");
-    return 0;
-  }
-
-  int initTopicNames() {
-    topic_name = topic_prefix + "/rs_camera/color/image_raw";
-    left_topic_name = topic_prefix + "/rs_camera/left/color/image_raw";
-    right_topic_name = topic_prefix + "/rs_camera/right/color/image_raw";
-    rectify_topic_name = topic_prefix + "/rs_camera/rect/color/image_raw";
-    rectify_left_topic_name =
-        topic_prefix + "/rs_camera/left/rect/color/image_raw";
-    rectify_right_topic_name =
-        topic_prefix + "/rs_camera/right/rect/color/image_raw";
-    pointcloud_topic_name = topic_prefix + "/rs_lidar/points";
-    pointcloud_ac2_wave2_topic_name =
-        topic_prefix + "/rs_lidar/ac2_wave2/points";
-    imu_topic_name = topic_prefix + "/rs_imu";
-    jpeg_topic_name = topic_prefix + "/rs_camera/color/image_raw/compressed";
-    jpeg_left_topic_name =
-        topic_prefix + "/rs_camera/left/color/image_raw/compressed";
-    jpeg_right_topic_name =
-        topic_prefix + "/rs_camera/right/color/image_raw/compressed";
-    jpeg_rectify_topic_name =
-        topic_prefix + "/rs_camera/rect/color/image_raw/compressed";
-    jpeg_rectify_left_topic_name =
-        topic_prefix + "/rs_camera/left/rect/color/image_raw/compressed";
-    jpeg_rectify_right_topic_name =
-        topic_prefix + "/rs_camera/right/rect/color/image_raw/compressed";
-    camera_info_topic_name = topic_prefix + "/rs_camera/color/camera_info";
-    camera_info_left_topic_name =
-        topic_prefix + "/rs_camera/left/color/camera_info";
-    camera_info_right_topic_name =
-        topic_prefix + "/rs_camera/right/color/camera_info";
-    ac_device_calib_info_topic_name = topic_prefix + "/device_calib_info";
-    return 0;
-  }
-
-  int initPublishers() {
-    if (lidar_type != robosense::lidar::LidarType::RS_AC2) {
-      enable_ac2_pointcloud_wave_split = false;
-      const std::string &error_info =
-          "lidar_type = " + robosense::lidar::lidarTypeToStr(lidar_type) +
-          " Not Support PointCloud Wave Split, Force "
-          "enable_ac2_pointcloud_wave_split = false !";
-      logWarn(error_info);
-      enable_ac2_pointcloud_wave_split = false;
+      RS_SPDLOG_INFO(error_info);
     }
 
     // 更新时间戳配置
@@ -1039,275 +882,250 @@ private:
               RS_CHANNEL_ID_JPEG_RECTIFY_RIGHT_IMAGE,
           jpeg_rectify_right_topic_name);
     }
+
+    return 0;
+  }
+
+  int stopTimestampManager() {
+    if (timestamp_manager_ptr) {
+      timestamp_manager_ptr.reset();
+    }
+    RS_SPDLOG_INFO("Stop Timestamp Manager Successed !");
+    return 0;
+  }
+
+  int stopDeviceManager() {
+    if (device_manager_ptr) {
+      device_manager_ptr->stop();
+    }
+    device_manager_ptr.reset();
+    RS_SPDLOG_INFO("Stop Device Manager Successed !");
+    return 0;
+  }
+
+  int initTopicNames() {
+    topic_name = topic_prefix + "/rs_camera/color/image_raw";
+    left_topic_name = topic_prefix + "/rs_camera/left/color/image_raw";
+    right_topic_name = topic_prefix + "/rs_camera/right/color/image_raw";
+    rectify_topic_name = topic_prefix + "/rs_camera/rect/color/image_raw";
+    rectify_left_topic_name =
+        topic_prefix + "/rs_camera/left/rect/color/image_raw";
+    rectify_right_topic_name =
+        topic_prefix + "/rs_camera/right/rect/color/image_raw";
+    pointcloud_topic_name = topic_prefix + "/rs_lidar/points";
+    pointcloud_ac2_wave2_topic_name =
+        topic_prefix + "/rs_lidar/ac2_wave2/points";
+    imu_topic_name = topic_prefix + "/rs_imu";
+    jpeg_topic_name = topic_prefix + "/rs_camera/color/image_raw/compressed";
+    jpeg_left_topic_name =
+        topic_prefix + "/rs_camera/left/color/image_raw/compressed";
+    jpeg_right_topic_name =
+        topic_prefix + "/rs_camera/right/color/image_raw/compressed";
+    jpeg_rectify_topic_name =
+        topic_prefix + "/rs_camera/rect/color/image_raw/compressed";
+    jpeg_rectify_left_topic_name =
+        topic_prefix + "/rs_camera/left/rect/color/image_raw/compressed";
+    jpeg_rectify_right_topic_name =
+        topic_prefix + "/rs_camera/right/rect/color/image_raw/compressed";
+    camera_info_topic_name = topic_prefix + "/rs_camera/color/camera_info";
+    camera_info_left_topic_name =
+        topic_prefix + "/rs_camera/left/color/camera_info";
+    camera_info_right_topic_name =
+        topic_prefix + "/rs_camera/right/color/camera_info";
+    ac_device_calib_info_topic_name = topic_prefix + "/device_calib_info";
+    return 0;
+  }
+
+  template <typename ROS_MESSAGE_TYPE>
 #if defined(ROS_FOUND)
-    if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
-      if (enable_ac1_image_send) {
-        publisher_rgb = nh.advertise<sensor_msgs::Image>(topic_name, 10);
-
-        if (enable_rectify) {
-          publisher_rgb_rect =
-              nh.advertise<sensor_msgs::Image>(rectify_topic_name, 10);
-        }
-      } else {
-        logWarn("Disable AC1 Image Rgb Send By ROS !");
-      }
-    } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
-      if (enable_ac2_left_image_send) {
-        publisher_rgb_left =
-            nh.advertise<sensor_msgs::Image>(left_topic_name, 10);
-
-        if (enable_rectify) {
-          publisher_rgb_rectify_left =
-              nh.advertise<sensor_msgs::Image>(rectify_left_topic_name, 10);
-        }
-      } else {
-        logWarn("Disable AC2 Left Image Rgb Send By ROS !");
-      }
-
-      if (enable_ac2_right_image_send) {
-        publisher_rgb_right =
-            nh.advertise<sensor_msgs::Image>(right_topic_name, 10);
-
-        if (enable_rectify) {
-          publisher_rgb_rectify_right =
-              nh.advertise<sensor_msgs::Image>(rectify_right_topic_name, 10);
-        }
-      } else {
-        logWarn("Disable AC2 Right Image Rgb Send By ROS !");
-      }
-    }
-    if (enable_pointcloud_send) {
-      publisher_depth =
-          nh.advertise<sensor_msgs::PointCloud2>(pointcloud_topic_name, 10);
-      if (enable_ac2_pointcloud_wave_split) {
-        publisher_depth_ac2_wave2 = nh.advertise<sensor_msgs::PointCloud2>(
-            pointcloud_ac2_wave2_topic_name, 10);
-      }
-    } else {
-      logWarn("Disable PointCloud Send By ROS !");
-    }
-    if (enable_imu_send) {
-      publisher_imu = nh.advertise<sensor_msgs::Imu>(imu_topic_name, 10);
-    } else {
-      logWarn("Disable Imu Send By ROS !");
-    }
-    if (enable_jpeg) {
-      if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
-        if (enable_ac1_image_send) {
-          publisher_jpeg =
-              nh.advertise<sensor_msgs::CompressedImage>(jpeg_topic_name, 10);
-        } else {
-          logWarn("Disable AC1 Image Jpeg Send By ROS !");
-        }
-      } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
-        if (enable_ac2_left_image_send) {
-          publisher_jpeg_left = nh.advertise<sensor_msgs::CompressedImage>(
-              jpeg_left_topic_name, 10);
-        } else {
-          logWarn("Disable AC2 Left Image Jpeg Send By ROS !");
-        }
-        if (enable_ac2_right_image_send) {
-          publisher_jpeg_right = nh.advertise<sensor_msgs::CompressedImage>(
-              jpeg_right_topic_name, 10);
-        } else {
-          logWarn("Disable AC2 Right Image Jpeg Send By ROS !");
-        }
-      }
-    }
-
-    if (enable_rectify_jpeg) {
-      if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
-        if (enable_ac1_image_send) {
-          publisher_jpeg_rect = nh.advertise<sensor_msgs::CompressedImage>(
-              jpeg_rectify_topic_name, 10);
-        } else {
-          logWarn("Disable AC1 Rectify Image Jpeg Send By ROS !");
-        }
-      } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
-        if (enable_ac2_left_image_send) {
-          publisher_jpeg_rectify_left =
-              nh.advertise<sensor_msgs::CompressedImage>(
-                  jpeg_rectify_left_topic_name, 10);
-        } else {
-          logWarn("Disable AC2 Rectify Left Image Jpeg Send By ROS !");
-        }
-        if (enable_ac2_right_image_send) {
-          publisher_jpeg_rectify_right =
-              nh.advertise<sensor_msgs::CompressedImage>(
-                  jpeg_rectify_right_topic_name, 10);
-        } else {
-          logWarn("Disable AC2 Rectify Right Image Jpeg Send By ROS !");
-        }
-      }
-    }
+  std::shared_ptr<ros::Publisher>
 #elif defined(ROS2_FOUND)
-    if (enable_ros2_zero_copy) {
+  std::shared_ptr<rclcpp::Publisher<ROS_MESSAGE_TYPE>>
+#endif // defined(ROS_ROS2_FOUND)
+  create_ros_publisher(const std::string &topic_name, const uint32_t depth) {
+#if defined(ROS_FOUND)
+    auto publisherPtr =
+        robosense::interface::RSRosManager::create_publisher<ROS_MESSAGE_TYPE>(
+            nh, topic_name, depth);
+#elif defined(ROS2_FOUND)
+    auto publisherPtr =
+        robosense::interface::RSRosManager::create_publisher<ROS_MESSAGE_TYPE>(
+            this, topic_name, rclcpp::QoS(depth));
+#endif // defined(ROS_ROS2_FOUND)
+    if (publisherPtr == nullptr) {
+      RS_SPDLOG_ERROR(std::string("Create TopicName = ") + topic_name +
+                      " Failed !");
+    }
+    return publisherPtr;
+  }
+
+  int initPublishers() {
+    if (lidar_type != robosense::lidar::LidarType::RS_AC2) {
+      enable_ac2_pointcloud_wave_split = false;
+      const std::string &error_info =
+          "lidar_type = " + robosense::lidar::lidarTypeToStr(lidar_type) +
+          " Not Support PointCloud Wave Split, Force "
+          "enable_ac2_pointcloud_wave_split = false !";
+      RS_SPDLOG_WARN(error_info);
+      enable_ac2_pointcloud_wave_split = false;
+    }
+
+    if (!enable_ros2_zero_copy) {
+      if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
+        if (enable_ac1_image_send) {
+          publisher_rgb = create_ros_publisher<ROS_IMAGE>(topic_name, 10);
+          if (enable_rectify) {
+            publisher_rgb_rectify =
+                create_ros_publisher<ROS_IMAGE>(rectify_topic_name, 10);
+          }
+        } else {
+          RS_SPDLOG_WARN("Disable AC1 Image Rgb Send By ROS2 !");
+        }
+      } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
+        if (enable_ac2_left_image_send) {
+          publisher_rgb_left =
+              create_ros_publisher<ROS_IMAGE>(left_topic_name, 10);
+          if (enable_rectify) {
+            publisher_rgb_rectify_left =
+                create_ros_publisher<ROS_IMAGE>(rectify_left_topic_name, 10);
+          }
+        } else {
+          RS_SPDLOG_WARN("Disable AC2 Left Image Rgb Send By ROS2 !");
+        }
+        if (enable_ac2_right_image_send) {
+          publisher_rgb_right =
+              create_ros_publisher<ROS_IMAGE>(right_topic_name, 10);
+          if (enable_rectify) {
+            publisher_rgb_rectify_right =
+                create_ros_publisher<ROS_IMAGE>(rectify_right_topic_name, 10);
+          }
+        } else {
+          RS_SPDLOG_WARN("Disable AC2 Right Image Rgb Send By ROS2 !");
+        }
+      }
+      if (enable_pointcloud_send) {
+        publisher_depth =
+            create_ros_publisher<ROS_POINTCLOUD2>(pointcloud_topic_name, 10);
+        if (enable_ac2_pointcloud_wave_split) {
+          publisher_depth_ac2_wave2 = create_ros_publisher<ROS_POINTCLOUD2>(
+              pointcloud_ac2_wave2_topic_name, 10);
+        }
+      } else {
+        RS_SPDLOG_WARN("Disable PointCloud Send By ROS2 !");
+      }
+    }
+#if defined(ROS2_FOUND)
+    else {
       if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
         if (enable_ac1_image_send) {
           publisher_rgb_loan =
-              this->create_publisher<robosense_msgs::msg::RsImage8M>(topic_name,
-                                                                     10);
+              create_ros_publisher<ROS_ZEROCOPY_IMAGE8M>(topic_name, 10);
           if (enable_rectify) {
             publisher_rgb_rectify_loan =
-                this->create_publisher<robosense_msgs::msg::RsImage8M>(
-                    rectify_topic_name, 10);
+                create_ros_publisher<ROS_ZEROCOPY_IMAGE8M>(rectify_topic_name,
+                                                           10);
           }
         } else {
-          logWarn("Disable AC1 Image Rgb ZeroCopy Send By ROS2 !");
+          RS_SPDLOG_WARN("Disable AC1 Image Rgb ZeroCopy Send By ROS2 !");
         }
         if (enable_pointcloud_send) {
           publisher_depth_loan =
-              this->create_publisher<robosense_msgs::msg::RsPointCloud1M>(
+              create_ros_publisher<robosense_msgs::msg::RsPointCloud1M>(
                   pointcloud_topic_name, 10);
         } else {
-          logWarn("Disable PointCloud ZeroCopy Send By ROS2 !");
+          RS_SPDLOG_WARN("Disable PointCloud ZeroCopy Send By ROS2 !");
         }
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
         if (enable_ac2_left_image_send) {
           publisher_rgb_left_loan =
-              this->create_publisher<robosense_msgs::msg::RsImage4M>(
-                  left_topic_name, 10);
+              create_ros_publisher<ROS_ZEROCOPY_IMAGE4M>(left_topic_name, 10);
           if (enable_rectify) {
             publisher_rgb_rectify_left_loan =
-                this->create_publisher<robosense_msgs::msg::RsImage4M>(
+                create_ros_publisher<ROS_ZEROCOPY_IMAGE4M>(
                     rectify_left_topic_name, 10);
           }
         } else {
-          logWarn("Disable AC2 Left Image Rgb ZeroCopy Send By ROS2 !");
+          RS_SPDLOG_WARN("Disable AC2 Left Image Rgb ZeroCopy Send By ROS2 !");
         }
         if (enable_ac2_right_image_send) {
           publisher_rgb_right_loan =
-              this->create_publisher<robosense_msgs::msg::RsImage4M>(
-                  right_topic_name, 10);
+              create_ros_publisher<ROS_ZEROCOPY_IMAGE4M>(right_topic_name, 10);
           if (enable_rectify) {
             publisher_rgb_rectify_right_loan =
-                this->create_publisher<robosense_msgs::msg::RsImage4M>(
+                create_ros_publisher<ROS_ZEROCOPY_IMAGE4M>(
                     rectify_right_topic_name, 10);
           }
         } else {
-          logWarn("Disable AC2 Right Image Rgb ZeroCopy Send By ROS2 !");
+          RS_SPDLOG_WARN("Disable AC2 Right Image Rgb ZeroCopy Send By ROS2 !");
         }
         if (enable_pointcloud_send) {
           publisher_depth_ac2_loan =
-              this->create_publisher<robosense_msgs::msg::RsPointCloud4M>(
+              create_ros_publisher<ROS_ZEROCOPY_POINTCLOUD4M>(
                   pointcloud_topic_name, 10);
           if (enable_ac2_pointcloud_wave_split) {
             publisher_depth_ac2_wave2_loan =
-                this->create_publisher<robosense_msgs::msg::RsPointCloud4M>(
+                create_ros_publisher<ROS_ZEROCOPY_POINTCLOUD4M>(
                     pointcloud_ac2_wave2_topic_name, 10);
           }
         } else {
-          logWarn("Disable PointCloud ZeroCopy Send By ROS2 !");
+          RS_SPDLOG_WARN("Disable PointCloud ZeroCopy Send By ROS2 !");
         }
-      }
-    } else {
-      if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
-        if (enable_ac1_image_send) {
-          publisher_rgb =
-              this->create_publisher<sensor_msgs::msg::Image>(topic_name, 10);
-          if (enable_rectify) {
-            publisher_rgb_rect =
-                this->create_publisher<sensor_msgs::msg::Image>(
-                    rectify_topic_name, 10);
-          }
-        } else {
-          logWarn("Disable AC1 Image Rgb Send By ROS2 !");
-        }
-      } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
-        if (enable_ac2_left_image_send) {
-          publisher_rgb_left = this->create_publisher<sensor_msgs::msg::Image>(
-              left_topic_name, 10);
-          if (enable_rectify) {
-            publisher_rgb_rectify_left =
-                this->create_publisher<sensor_msgs::msg::Image>(
-                    rectify_left_topic_name, 10);
-          }
-        } else {
-          logWarn("Disable AC2 Left Image Rgb Send By ROS2 !");
-        }
-        if (enable_ac2_right_image_send) {
-          publisher_rgb_right = this->create_publisher<sensor_msgs::msg::Image>(
-              right_topic_name, 10);
-          if (enable_rectify) {
-            publisher_rgb_rectify_right =
-                this->create_publisher<sensor_msgs::msg::Image>(
-                    rectify_right_topic_name, 10);
-          }
-        } else {
-          logWarn("Disable AC2 Right Image Rgb Send By ROS2 !");
-        }
-      }
-      if (enable_pointcloud_send) {
-        publisher_depth = this->create_publisher<sensor_msgs::msg::PointCloud2>(
-            pointcloud_topic_name, 10);
-        if (enable_ac2_pointcloud_wave_split) {
-          publisher_depth_ac2_wave2 =
-              this->create_publisher<sensor_msgs::msg::PointCloud2>(
-                  pointcloud_ac2_wave2_topic_name, 10);
-        }
-      } else {
-        logWarn("Disable PointCloud Send By ROS2 !");
       }
     }
+#endif // defined(ROS2_FOUND)
     if (enable_imu_send) {
-      publisher_imu =
-          this->create_publisher<sensor_msgs::msg::Imu>(imu_topic_name, 10);
+      publisher_imu = create_ros_publisher<ROS_IMU>(imu_topic_name, 10);
     } else {
-      logWarn("Disable Imu Send By ROS2 !");
+      RS_SPDLOG_WARN("Disable Imu Send By ROS2 !");
     }
     if (enable_jpeg) {
       if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
         if (enable_ac1_image_send) {
           publisher_jpeg =
-              this->create_publisher<sensor_msgs::msg::CompressedImage>(
-                  jpeg_topic_name, 10);
+              create_ros_publisher<ROS_COMPRESSED_IMAGE>(jpeg_topic_name, 10);
         } else {
-          logWarn("Disable AC1 Image Jpeg Send By ROS2 !");
+          RS_SPDLOG_WARN("Disable AC1 Image Jpeg Send By ROS2 !");
         }
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
         if (enable_ac2_left_image_send) {
-          publisher_jpeg_left =
-              this->create_publisher<sensor_msgs::msg::CompressedImage>(
-                  jpeg_left_topic_name, 10);
+          publisher_jpeg_left = create_ros_publisher<ROS_COMPRESSED_IMAGE>(
+              jpeg_left_topic_name, 10);
         } else {
-          logWarn("Disable AC2 Left Image Jpeg Send By ROS2 !");
+          RS_SPDLOG_WARN("Disable AC2 Left Image Jpeg Send By ROS2 !");
         }
         if (enable_ac2_right_image_send) {
-          publisher_jpeg_right =
-              this->create_publisher<sensor_msgs::msg::CompressedImage>(
-                  jpeg_right_topic_name, 10);
+          publisher_jpeg_right = create_ros_publisher<ROS_COMPRESSED_IMAGE>(
+              jpeg_right_topic_name, 10);
         } else {
-          logWarn("Disable AC2 Right Image Jpeg Send By ROS2 !");
+          RS_SPDLOG_WARN("Disable AC2 Right Image Jpeg Send By ROS2 !");
         }
       }
     }
     if (enable_rectify_jpeg) {
       if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
         if (enable_ac1_image_send) {
-          publisher_jpeg_rect =
-              this->create_publisher<sensor_msgs::msg::CompressedImage>(
-                  jpeg_rectify_topic_name, 10);
+          publisher_jpeg_rectify = create_ros_publisher<ROS_COMPRESSED_IMAGE>(
+              jpeg_rectify_topic_name, 10);
         } else {
-          logWarn("Disable AC1 Rectify Image Jpeg Send By ROS2 !");
+          RS_SPDLOG_WARN("Disable AC1 Rectify Image Jpeg Send By ROS2 !");
         }
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
         if (enable_ac2_left_image_send) {
           publisher_jpeg_rectify_left =
-              this->create_publisher<sensor_msgs::msg::CompressedImage>(
+              create_ros_publisher<ROS_COMPRESSED_IMAGE>(
                   jpeg_rectify_left_topic_name, 10);
         } else {
-          logWarn("Disable AC2 Rectify Left Image Jpeg Send By ROS2 !");
+          RS_SPDLOG_WARN("Disable AC2 Rectify Left Image Jpeg Send By ROS2 !");
         }
         if (enable_ac2_right_image_send) {
           publisher_jpeg_rectify_right =
-              this->create_publisher<sensor_msgs::msg::CompressedImage>(
+              create_ros_publisher<ROS_COMPRESSED_IMAGE>(
                   jpeg_rectify_right_topic_name, 10);
         } else {
-          logWarn("Disable AC2 Rectify Right Image Jpeg Send By ROS2 !");
+          RS_SPDLOG_WARN("Disable AC2 Rectify Right Image Jpeg Send By ROS2 !");
         }
       }
     }
-#endif // defined(ROS_ROS2_FOUND)
 
     return 0;
   }
@@ -1357,8 +1175,9 @@ private:
               ac2_right_crop_config.getCropWidth() ||
           ac2_left_crop_config.getCropHeight() !=
               ac2_right_crop_config.getCropHeight()) {
-        logError("AC2 Left Image Crop Setting Not Match AC2 Right Image Crop "
-                 "Setting !");
+        RS_SPDLOG_ERROR(
+            "AC2 Left Image Crop Setting Not Match AC2 Right Image Crop "
+            "Setting !");
         return -1;
       }
       // left
@@ -1391,12 +1210,13 @@ private:
       try {
         rgb_codec_ptr.reset(new robosense::color::ColorCodec());
       } catch (...) {
-        logError("Malloc AC1 Codec(s) Failed !");
+        RS_SPDLOG_ERROR("Malloc AC1 Codec(s) Failed !");
         return -1;
       }
       ret = rgb_codec_ptr->init(image_width_rgb, image_height_rgb);
       if (ret != 0) {
-        logError("AC1 Codec(s) Initial Failed: ret = " + std::to_string(ret));
+        RS_SPDLOG_ERROR("AC1 Codec(s) Initial Failed: ret = " +
+                        std::to_string(ret));
         return -2;
       }
     } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
@@ -1404,13 +1224,13 @@ private:
       try {
         rgb_left_codec_ptr.reset(new robosense::color::ColorCodec());
       } catch (...) {
-        logError("Malloc AC2 Left Codec(s) Failed !");
+        RS_SPDLOG_ERROR("Malloc AC2 Left Codec(s) Failed !");
         return -3;
       }
       ret = rgb_left_codec_ptr->init(image_width_rgb, image_height_rgb);
       if (ret != 0) {
-        logError("AC2 Codec(s) Left Initial Failed: ret = " +
-                 std::to_string(ret));
+        RS_SPDLOG_ERROR("AC2 Codec(s) Left Initial Failed: ret = " +
+                        std::to_string(ret));
         return -4;
       }
 
@@ -1418,13 +1238,13 @@ private:
       try {
         rgb_right_codec_ptr.reset(new robosense::color::ColorCodec());
       } catch (...) {
-        logError("Malloc AC2 Right Codec(s) Failed !");
+        RS_SPDLOG_ERROR("Malloc AC2 Right Codec(s) Failed !");
         return -5;
       }
       ret = rgb_right_codec_ptr->init(image_width_rgb, image_height_rgb);
       if (ret != 0) {
-        logError("AC2 Codec(s) Right Initial Failed: ret = " +
-                 std::to_string(ret));
+        RS_SPDLOG_ERROR("AC2 Codec(s) Right Initial Failed: ret = " +
+                        std::to_string(ret));
         return -6;
       }
     }
@@ -1457,14 +1277,14 @@ private:
         try {
           jpeg_encoder_ptr.reset(new robosense::jpeg::JpegCoder());
         } catch (...) {
-          logError("Malloc AC1 Jpeg Encoder Failed !");
+          RS_SPDLOG_ERROR("Malloc AC1 Jpeg Encoder Failed !");
           return -1;
         }
 
         ret = jpeg_encoder_ptr->init(config);
         if (ret != 0) {
-          logError("Initial AC1 Jpeg Encoder Failed: ret = " +
-                   std::to_string(ret));
+          RS_SPDLOG_ERROR("Initial AC1 Jpeg Encoder Failed: ret = " +
+                          std::to_string(ret));
           return -2;
         }
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
@@ -1474,14 +1294,14 @@ private:
         try {
           jpeg_left_encoder_ptr.reset(new robosense::jpeg::JpegCoder());
         } catch (...) {
-          logError("Malloc AC2 Jpeg Left Encoder Failed !");
+          RS_SPDLOG_ERROR("Malloc AC2 Jpeg Left Encoder Failed !");
           return -3;
         }
 
         ret = jpeg_left_encoder_ptr->init(config);
         if (ret != 0) {
-          logError("Initial AC2 Jpeg Left Encoder Failed: ret = " +
-                   std::to_string(ret));
+          RS_SPDLOG_ERROR("Initial AC2 Jpeg Left Encoder Failed: ret = " +
+                          std::to_string(ret));
           return -4;
         }
 
@@ -1491,20 +1311,20 @@ private:
         try {
           jpeg_right_encoder_ptr.reset(new robosense::jpeg::JpegCoder());
         } catch (...) {
-          logError("Malloc AC2 Jpeg Right Encoder Failed !");
+          RS_SPDLOG_ERROR("Malloc AC2 Jpeg Right Encoder Failed !");
           return -5;
         }
 
         ret = jpeg_right_encoder_ptr->init(config);
         if (ret != 0) {
-          logError("Initial AC2 Jpeg Right Encoder Failed: ret = " +
-                   std::to_string(ret));
+          RS_SPDLOG_ERROR("Initial AC2 Jpeg Right Encoder Failed: ret = " +
+                          std::to_string(ret));
           return -6;
         }
       }
-      logInfo("Enable Jpeg: Create Jpeg Encoder(s) Successed !");
+      RS_SPDLOG_INFO("Enable Jpeg: Create Jpeg Encoder(s) Successed !");
     } else {
-      logInfo("Disable Jpeg: Not Need Create Jpeg Encoder(s) !");
+      RS_SPDLOG_INFO("Disable Jpeg: Not Need Create Jpeg Encoder(s) !");
     }
 
     if (enable_rectify_jpeg) {
@@ -1521,14 +1341,14 @@ private:
         try {
           jpeg_rectify_encoder_ptr.reset(new robosense::jpeg::JpegCoder());
         } catch (...) {
-          logError("Malloc AC1 Rectify Jpeg Encoder Failed !");
+          RS_SPDLOG_ERROR("Malloc AC1 Rectify Jpeg Encoder Failed !");
           return -1;
         }
 
         ret = jpeg_rectify_encoder_ptr->init(config);
         if (ret != 0) {
-          logError("Initial AC1 Rectify Jpeg Encoder Failed: ret = " +
-                   std::to_string(ret));
+          RS_SPDLOG_ERROR("Initial AC1 Rectify Jpeg Encoder Failed: ret = " +
+                          std::to_string(ret));
           return -2;
         }
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
@@ -1538,14 +1358,15 @@ private:
         try {
           jpeg_rectify_left_encoder_ptr.reset(new robosense::jpeg::JpegCoder());
         } catch (...) {
-          logError("Malloc AC2 Rectify Jpeg Left Encoder Failed !");
+          RS_SPDLOG_ERROR("Malloc AC2 Rectify Jpeg Left Encoder Failed !");
           return -3;
         }
 
         ret = jpeg_rectify_left_encoder_ptr->init(config);
         if (ret != 0) {
-          logError("Initial AC2 Rectify Jpeg Left Encoder Failed: ret = " +
-                   std::to_string(ret));
+          RS_SPDLOG_ERROR(
+              "Initial AC2 Rectify Jpeg Left Encoder Failed: ret = " +
+              std::to_string(ret));
           return -4;
         }
 
@@ -1556,21 +1377,22 @@ private:
           jpeg_rectify_right_encoder_ptr.reset(
               new robosense::jpeg::JpegCoder());
         } catch (...) {
-          logError("Malloc AC2 Rectify Jpeg Right Encoder Failed !");
+          RS_SPDLOG_ERROR("Malloc AC2 Rectify Jpeg Right Encoder Failed !");
           return -5;
         }
 
         ret = jpeg_rectify_right_encoder_ptr->init(config);
         if (ret != 0) {
-          logError("Initial AC2 Rectify Jpeg Right Encoder Failed: ret = " +
-                   std::to_string(ret));
+          RS_SPDLOG_ERROR(
+              "Initial AC2 Rectify Jpeg Right Encoder Failed: ret = " +
+              std::to_string(ret));
           return -6;
         }
       }
-      logInfo(
+      RS_SPDLOG_INFO(
           "Enable Rectify Jpeg: Create Rectify Jpeg Encoder(s) Successed !");
     } else {
-      logInfo(
+      RS_SPDLOG_INFO(
           "Disable Rectify Jpeg: Not Need Create Rectify Jpeg Encoder(s) !");
     }
 
@@ -1585,9 +1407,9 @@ private:
         jpeg_left_encoder_ptr.reset();
         jpeg_right_encoder_ptr.reset();
       }
-      logInfo("Enable Jpeg: Stop Jpeg Encoder(s) Successed !");
+      RS_SPDLOG_INFO("Enable Jpeg: Stop Jpeg Encoder(s) Successed !");
     } else {
-      logInfo("Disable Jpeg: Not Need Stop Jpeg Encoder(s) !");
+      RS_SPDLOG_INFO("Disable Jpeg: Not Need Stop Jpeg Encoder(s) !");
     }
 
     if (enable_rectify_jpeg) {
@@ -1597,9 +1419,11 @@ private:
         jpeg_rectify_left_encoder_ptr.reset();
         jpeg_rectify_right_encoder_ptr.reset();
       }
-      logInfo("Enable Rectify Jpeg: Stop Rectify Jpeg Encoder(s) Successed !");
+      RS_SPDLOG_INFO(
+          "Enable Rectify Jpeg: Stop Rectify Jpeg Encoder(s) Successed !");
     } else {
-      logInfo("Disable Rectify Jpeg: Not Need Stop Rectify Jpeg Encoder(s) !");
+      RS_SPDLOG_INFO(
+          "Disable Rectify Jpeg: Not Need Stop Rectify Jpeg Encoder(s) !");
     }
 
     return 0;
@@ -1613,7 +1437,7 @@ private:
             new std::thread(&MSPublisher::rgbProcessWorkThread, this));
       } catch (...) {
         is_rgb_running_ = false;
-        logError("Malloc AC1 Rgb Work Thread(s) Failed !");
+        RS_SPDLOG_ERROR("Malloc AC1 Rgb Work Thread(s) Failed !");
         return -1;
       }
     } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
@@ -1623,7 +1447,7 @@ private:
             new std::thread(&MSPublisher::rgbLeftProcessWorkThread, this));
       } catch (...) {
         is_rgb_left_running_ = false;
-        logError("Malloc AC2 Rgb Left Work Thread(s) Failed !");
+        RS_SPDLOG_ERROR("Malloc AC2 Rgb Left Work Thread(s) Failed !");
         return -2;
       }
 
@@ -1633,11 +1457,11 @@ private:
             new std::thread(&MSPublisher::rgbRightProcessWorkThread, this));
       } catch (...) {
         is_rgb_right_running_ = false;
-        logError("Malloc AC2 Rgb Right Work Thread(s) Failed !");
+        RS_SPDLOG_ERROR("Malloc AC2 Rgb Right Work Thread(s) Failed !");
         return -3;
       }
     }
-    logInfo("Enable Rgb: Create Rgb Work Thread(s) Successed !");
+    RS_SPDLOG_INFO("Enable Rgb: Create Rgb Work Thread(s) Successed !");
 
     if (enable_rectify) {
       if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
@@ -1647,7 +1471,7 @@ private:
               new std::thread(&MSPublisher::rgbRectifyProcessWorkThread, this));
         } catch (...) {
           is_rgb_rectify_running_ = false;
-          logError("Malloc AC1 Rgb Rectify Work Thread(s) Failed !");
+          RS_SPDLOG_ERROR("Malloc AC1 Rgb Rectify Work Thread(s) Failed !");
           return -1;
         }
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
@@ -1657,7 +1481,8 @@ private:
               &MSPublisher::rgbRectifyLeftProcessWorkThread, this));
         } catch (...) {
           is_rgb_rectify_left_running_ = false;
-          logError("Malloc AC2 Rgb Rectify Left Work Thread(s) Failed !");
+          RS_SPDLOG_ERROR(
+              "Malloc AC2 Rgb Rectify Left Work Thread(s) Failed !");
           return -2;
         }
 
@@ -1667,14 +1492,16 @@ private:
               &MSPublisher::rgbRectifyRightProcessWorkThread, this));
         } catch (...) {
           is_rgb_rectify_right_running_ = false;
-          logError("Malloc AC2 Rgb Rectify Right Work Thread(s) Failed !");
+          RS_SPDLOG_ERROR(
+              "Malloc AC2 Rgb Rectify Right Work Thread(s) Failed !");
           return -3;
         }
       }
-      logInfo(
+      RS_SPDLOG_INFO(
           "Enable Rgb Rectify: Create Rgb Rectify Work Thread(s) Successed !");
     } else {
-      logInfo("Dsiable Rgb Rectify: Not Create Rectify Work Thread(s) !");
+      RS_SPDLOG_INFO(
+          "Dsiable Rgb Rectify: Not Create Rectify Work Thread(s) !");
     }
 
     return 0;
@@ -1694,7 +1521,7 @@ private:
         }
         rgb_thread_ptr.reset();
       }
-      logInfo("Stop AC1 Rgb Work Thread(s) Successed !");
+      RS_SPDLOG_INFO("Stop AC1 Rgb Work Thread(s) Successed !");
     } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
       // left rgb
       if (is_rgb_left_running_) {
@@ -1721,7 +1548,7 @@ private:
         }
         rgb_right_thread_ptr.reset();
       }
-      logInfo("Stop AC2 Rgb Work Thread(s) Successed !");
+      RS_SPDLOG_INFO("Stop AC2 Rgb Work Thread(s) Successed !");
     }
 
     if (enable_rectify) {
@@ -1738,7 +1565,7 @@ private:
           }
           rgb_rectify_thread_ptr.reset();
         }
-        logInfo("Stop AC1 Rgb Rectify Work Thread(s) Successed !");
+        RS_SPDLOG_INFO("Stop AC1 Rgb Rectify Work Thread(s) Successed !");
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
         // left rgb
         if (is_rgb_rectify_left_running_) {
@@ -1767,12 +1594,13 @@ private:
           }
           rgb_rectify_right_thread_ptr.reset();
         }
-        logInfo("Enable Rgb Rectify: Stop AC2 Rgb Rectify Work Thread(s) "
-                "Successed !");
+        RS_SPDLOG_INFO(
+            "Enable Rgb Rectify: Stop AC2 Rgb Rectify Work Thread(s) "
+            "Successed !");
       }
     } else {
-      logInfo("Disable Rgb Rectify: Not Nees Stop AC2 Rgb Rectify Work "
-              "Thread(s) !");
+      RS_SPDLOG_INFO("Disable Rgb Rectify: Not Nees Stop AC2 Rgb Rectify Work "
+                     "Thread(s) !");
     }
 
     return 0;
@@ -1785,7 +1613,7 @@ private:
           new std::thread(&MSPublisher::deviceInfoProcessWorkThread, this));
     } catch (...) {
       is_device_info_running_ = false;
-      logError("Create Device Calibration Publish Work Thread Failed !");
+      RS_SPDLOG_ERROR("Create Device Calibration Publish Work Thread Failed !");
       return -1;
     }
     return 0;
@@ -1812,7 +1640,7 @@ private:
               new std::thread(&MSPublisher::jpegProcessWorkThread, this));
         } catch (...) {
           is_jpeg_running_ = false;
-          logError("Malloc AC1 Jpeg Work Thread Failed !");
+          RS_SPDLOG_ERROR("Malloc AC1 Jpeg Work Thread Failed !");
           return -1;
         }
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
@@ -1822,7 +1650,7 @@ private:
               new std::thread(&MSPublisher::jpegLeftProcessWorkThread, this));
         } catch (...) {
           is_jpeg_left_running_ = false;
-          logError("Malloc AC2 Jpeg Left Work Thread Failed !");
+          RS_SPDLOG_ERROR("Malloc AC2 Jpeg Left Work Thread Failed !");
           return -2;
         }
 
@@ -1832,13 +1660,13 @@ private:
               new std::thread(&MSPublisher::jpegRightProcessWorkThread, this));
         } catch (...) {
           is_jpeg_right_running_ = false;
-          logError("Malloc AC2 Jpeg Right Work Thread Failed !");
+          RS_SPDLOG_ERROR("Malloc AC2 Jpeg Right Work Thread Failed !");
           return -3;
         }
       }
-      logInfo("Enable Jpeg: Create Jpeg Work Thread(s) Successed !");
+      RS_SPDLOG_INFO("Enable Jpeg: Create Jpeg Work Thread(s) Successed !");
     } else {
-      logInfo("Disable Jpeg: Not Need Create Jpeg Work Thread(s) !");
+      RS_SPDLOG_INFO("Disable Jpeg: Not Need Create Jpeg Work Thread(s) !");
     }
 
     if (enable_rectify_jpeg) {
@@ -1849,7 +1677,7 @@ private:
               &MSPublisher::jpegRectifyProcessWorkThread, this));
         } catch (...) {
           is_jpeg_rectify_running_ = false;
-          logError("Malloc AC1 Rectify Jpeg Work Thread Failed !");
+          RS_SPDLOG_ERROR("Malloc AC1 Rectify Jpeg Work Thread Failed !");
           return -1;
         }
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
@@ -1859,7 +1687,7 @@ private:
               &MSPublisher::jpegRectifyLeftProcessWorkThread, this));
         } catch (...) {
           is_jpeg_rectify_left_running_ = false;
-          logError("Malloc AC2 Rectify Jpeg Left Work Thread Failed !");
+          RS_SPDLOG_ERROR("Malloc AC2 Rectify Jpeg Left Work Thread Failed !");
           return -2;
         }
 
@@ -1869,15 +1697,15 @@ private:
               &MSPublisher::jpegRectifyRightProcessWorkThread, this));
         } catch (...) {
           is_jpeg_rectify_right_running_ = false;
-          logError("Malloc AC2 Rectify Jpeg Right Work Thread Failed !");
+          RS_SPDLOG_ERROR("Malloc AC2 Rectify Jpeg Right Work Thread Failed !");
           return -3;
         }
       }
-      logInfo("Enable Rectify Jpeg: Create Rectify Jpeg Work Thread(s) "
-              "Successed !");
+      RS_SPDLOG_INFO("Enable Rectify Jpeg: Create Rectify Jpeg Work Thread(s) "
+                     "Successed !");
     } else {
-      logInfo("Disable Rectify Jpeg: Not Need Create Rectify Jpeg Work "
-              "Thread(s) !");
+      RS_SPDLOG_INFO("Disable Rectify Jpeg: Not Need Create Rectify Jpeg Work "
+                     "Thread(s) !");
     }
 
     return 0;
@@ -1896,7 +1724,7 @@ private:
           jpeg_thread_ptr->join();
         }
         jpeg_thread_ptr.reset();
-        logInfo("Stop AC1 Jpeg Work Thread(s) Successed !");
+        RS_SPDLOG_INFO("Stop AC1 Jpeg Work Thread(s) Successed !");
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
         // left jpeg
         {
@@ -1920,9 +1748,9 @@ private:
         }
         jpeg_right_thread_ptr.reset();
       }
-      logInfo("Stop AC2 Jpeg Work Thread(s) Successed !");
+      RS_SPDLOG_INFO("Stop AC2 Jpeg Work Thread(s) Successed !");
     } else {
-      logInfo("Disable Jpeg: Not Need Stop Jpeg Work Thread(s) !");
+      RS_SPDLOG_INFO("Disable Jpeg: Not Need Stop Jpeg Work Thread(s) !");
     }
 
     if (enable_rectify_jpeg) {
@@ -1937,7 +1765,7 @@ private:
           jpeg_rectify_thread_ptr->join();
         }
         jpeg_rectify_thread_ptr.reset();
-        logInfo("Stop AC1 Rectify Jpeg Work Thread(s) Successed !");
+        RS_SPDLOG_INFO("Stop AC1 Rectify Jpeg Work Thread(s) Successed !");
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
         // left jpeg
         {
@@ -1963,9 +1791,9 @@ private:
         }
         jpeg_rectify_right_thread_ptr.reset();
       }
-      logInfo("Stop AC2 Rectify Jpeg Work Thread(s) Successed !");
+      RS_SPDLOG_INFO("Stop AC2 Rectify Jpeg Work Thread(s) Successed !");
     } else {
-      logInfo(
+      RS_SPDLOG_INFO(
           "Disable Rectify Jpeg: Not Need Stop Rectify Jpeg Work Thread(s) !");
     }
 
@@ -2000,13 +1828,13 @@ private:
                                                                           : 200;
       }
       if (new_image_input_fps != image_input_fps) {
-        logWarn("AC1 Image Input Hz Force From: " +
-                std::to_string(image_input_fps) + " To " +
-                std::to_string(new_image_input_fps));
+        RS_SPDLOG_WARN("AC1 Image Input Hz Force From: " +
+                       std::to_string(image_input_fps) + " To " +
+                       std::to_string(new_image_input_fps));
         image_input_fps = new_image_input_fps;
       }
       if (new_imu_input_fps != imu_input_fps) {
-        logWarn(
+        RS_SPDLOG_WARN(
             "AC1 Imu Input Hz Force From: " + std::to_string(imu_input_fps) +
             " To " + std::to_string(new_imu_input_fps));
         imu_input_fps = new_imu_input_fps;
@@ -2023,16 +1851,16 @@ private:
       }
 
       if (new_image_input_fps != image_input_fps) {
-        logWarn("AC2 Image Input Hz Force From: " +
-                std::to_string(image_input_fps) + " To " +
-                std::to_string(new_image_input_fps));
+        RS_SPDLOG_WARN("AC2 Image Input Hz Force From: " +
+                       std::to_string(image_input_fps) + " To " +
+                       std::to_string(new_image_input_fps));
         image_input_fps = new_image_input_fps;
       }
 
       new_imu_input_fps = 200;
       if (new_imu_input_fps != imu_input_fps) {
         imu_input_fps = new_imu_input_fps;
-        logWarn(
+        RS_SPDLOG_WARN(
             "AC2 Imu Input Hz Force From: " + std::to_string(imu_input_fps) +
             " To " + std::to_string(new_imu_input_fps));
       }
@@ -2083,6 +1911,7 @@ private:
     deviceOpenConfig.enable_ac2_left_image_send = enable_ac2_left_image_send;
     deviceOpenConfig.enable_ac2_right_image_send = enable_ac2_right_image_send;
     deviceOpenConfig.enable_imu_send = enable_imu_send;
+    deviceOpenConfig.timestamp_compensate_s = timestamp_compensate_s;
 
     // AC2 Algorithm Param(s)
 #if defined(ENABLE_SUPPORT_RS_DRIVER_ALGORITHM)
@@ -2098,8 +1927,8 @@ private:
     if (!timestamp_output_dir_path.empty()) {
       ret = initTimestampManager();
       if (ret != 0) {
-        logError("Initial Timestamp Manager Failed: ret = " +
-                 std::to_string(ret));
+        RS_SPDLOG_ERROR("Initial Timestamp Manager Failed: ret = " +
+                        std::to_string(ret));
         return -1;
       }
     }
@@ -2107,7 +1936,7 @@ private:
     // Initial publishers
     ret = initPublishers();
     if (ret != 0) {
-      logError(
+      RS_SPDLOG_ERROR(
           "Found Device uuid = " + uuid +
           ", Initial Ros Publisher(s) Failed: ret = " + std::to_string(ret));
       return -2;
@@ -2116,23 +1945,25 @@ private:
     // Initial Image Buffer(s)
     ret = initImageBuffer();
     if (ret != 0) {
-      logError("Found Device uuid = " + uuid +
-               ", Initial Image Buffer Failed: ret = " + std::to_string(ret));
+      RS_SPDLOG_ERROR(
+          "Found Device uuid = " + uuid +
+          ", Initial Image Buffer Failed: ret = " + std::to_string(ret));
       return -3;
     }
 
     // Initial Rgb Codec
     ret = initRgbCodec();
     if (ret != 0) {
-      logError("Found Device uuid = " + uuid +
-               ", Initial Rgb Codec(s) Failed: ret = " + std::to_string(ret));
+      RS_SPDLOG_ERROR(
+          "Found Device uuid = " + uuid +
+          ", Initial Rgb Codec(s) Failed: ret = " + std::to_string(ret));
       return -4;
     }
 
     // Initial Rgb Thread(s)
     ret = initRgbWorkThreads();
     if (ret != 0) {
-      logError(
+      RS_SPDLOG_ERROR(
           "Found Device uuid = " + uuid +
           ", Initial Rgb Work Thread(s) Failed: ret = " + std::to_string(ret));
       return -5;
@@ -2141,7 +1972,7 @@ private:
     // Initial Jpeg Encoder
     ret = initJpegEncoder();
     if (ret != 0) {
-      logError(
+      RS_SPDLOG_ERROR(
           "Found Device uuid = " + uuid +
           ", Initial Jpeg Encoder(s) Failed: ret = " + std::to_string(ret));
       return -6;
@@ -2150,7 +1981,7 @@ private:
     // Initial Jpeg Thread(s)
     ret = initJpegWorkThreads();
     if (ret != 0) {
-      logError(
+      RS_SPDLOG_ERROR(
           "Found Device uuid = " + uuid +
           ", Initial Jpeg Work Thread(s) Failed: ret = " + std::to_string(ret));
       return -7;
@@ -2165,23 +1996,23 @@ private:
 
     ret = device_manager_ptr->openDevice(deviceOpenConfig);
     if (ret != 0) {
-      logError("Device uuid = " + uuid +
-               " Open Device Failed: ret = " + std::to_string(ret));
+      RS_SPDLOG_ERROR("Device uuid = " + uuid +
+                      " Open Device Failed: ret = " + std::to_string(ret));
       return -8;
     }
 
     {
       std::lock_guard<std::mutex> lg(current_device_uuid_mtx);
       current_device_uuid = uuid;
-      logInfo("Device uuid = " + uuid + " Open Successed !");
+      RS_SPDLOG_INFO("Device uuid = " + uuid + " Open Successed !");
     }
 
     // Initial Device Calibration Info Thread
     ret = initDeviceCalibInfoWorkThread();
     if (ret != 0) {
-      logError("Found Device uuid = " + uuid +
-               ", Initial Device Calib Info Thread Failed: ret = " +
-               std::to_string(ret));
+      RS_SPDLOG_ERROR("Found Device uuid = " + uuid +
+                      ", Initial Device Calib Info Thread Failed: ret = " +
+                      std::to_string(ret));
       return -9;
     }
 
@@ -2193,44 +2024,47 @@ private:
 
     ret = device_manager_ptr->closeDevice(uuid, true);
     if (ret != 0) {
-      logError("Device uuid = " + uuid +
-               " Detach Close Failed: ret = " + std::to_string(ret));
+      RS_SPDLOG_ERROR("Device uuid = " + uuid +
+                      " Detach Close Failed: ret = " + std::to_string(ret));
       return -1;
     }
 
     // 关闭Rgb Thread(s)
     ret = stopRgbWorkThreads();
     if (ret != 0) {
-      logError("Stop Rgb Work Thread(s) Failed: ret = " + std::to_string(ret));
+      RS_SPDLOG_ERROR("Stop Rgb Work Thread(s) Failed: ret = " +
+                      std::to_string(ret));
       return -2;
     }
 
     // 关闭RgbCodec
     ret = stopRgbCodec();
     if (ret != 0) {
-      logError("Stop Rgb Codec(s) Failed: ret = " + std::to_string(ret));
+      RS_SPDLOG_ERROR("Stop Rgb Codec(s) Failed: ret = " + std::to_string(ret));
       return -3;
     }
 
     // 关闭Jpeg Thread(s)
     ret = stopJpegWorkThreads();
     if (ret != 0) {
-      logError("Stop Jpeg Work Thread(s) Failed: ret = " + std::to_string(ret));
+      RS_SPDLOG_ERROR("Stop Jpeg Work Thread(s) Failed: ret = " +
+                      std::to_string(ret));
       return -4;
     }
 
     // 关闭JpegEncoder
     ret = stopJpegEncoder();
     if (ret != 0) {
-      logError("Stop Jpeg Encoder(s) Failed: ret = " + std::to_string(ret));
+      RS_SPDLOG_ERROR("Stop Jpeg Encoder(s) Failed: ret = " +
+                      std::to_string(ret));
       return -5;
     }
 
     // Initial Device Calibration Info Thread
     ret = stopDeviceCalibInfoWorkThread();
     if (ret != 0) {
-      logError("Stop Device Calib Info Thread Failed: ret = " +
-               std::to_string(ret));
+      RS_SPDLOG_ERROR("Stop Device Calib Info Thread Failed: ret = " +
+                      std::to_string(ret));
       return -6;
     }
 
@@ -2253,7 +2087,7 @@ private:
       camera_rectify_map_valid = false;
       left_camera_rectify_map_valid = false;
       right_camera_rectify_map_valid = false;
-      logInfo("Device uuid = " + uuid + " Close Successed !");
+      RS_SPDLOG_INFO("Device uuid = " + uuid + " Close Successed !");
     }
 
     return 0;
@@ -2268,20 +2102,21 @@ private:
       {
         std::lock_guard<std::mutex> lg(current_device_uuid_mtx);
         if (uuid == current_device_uuid) {
-          logInfo("Device uuid = " + uuid + " Already Open !");
+          RS_SPDLOG_INFO("Device uuid = " + uuid + " Already Open !");
           return;
         } else if (!current_device_uuid.empty()) {
-          logInfo("Current Device uuid = " + current_device_uuid +
-                  " Already Open, Attach Device uuid = " + uuid +
-                  " Not Open: Because Of Not Support Open Multi-Device !");
+          RS_SPDLOG_INFO(
+              "Current Device uuid = " + current_device_uuid +
+              " Already Open, Attach Device uuid = " + uuid +
+              " Not Open: Because Of Not Support Open Multi-Device !");
           return;
         }
       }
 
       // 设备过滤启用时
       if (!serial_number.empty() && uuid != serial_number) {
-        logWarn("Current Find Device UUID: " + uuid +
-                " Not Setting serial_number: " + serial_number);
+        RS_SPDLOG_WARN("Current Find Device UUID: " + uuid +
+                       " Not Setting serial_number: " + serial_number);
         return;
       }
 
@@ -2291,8 +2126,8 @@ private:
       // 打开设备
       ret = openDevice(uuid);
       if (ret != 0) {
-        logError("Open Device uuid = " + uuid + ", lidar_type = " +
-                 robosense::lidar::lidarTypeToStr(lidar_type));
+        RS_SPDLOG_ERROR("Open Device uuid = " + uuid + ", lidar_type = " +
+                        robosense::lidar::lidarTypeToStr(lidar_type));
         return;
       }
 
@@ -2304,7 +2139,8 @@ private:
       {
         std::lock_guard<std::mutex> lg(current_device_uuid_mtx);
         if (uuid != current_device_uuid || current_device_uuid.empty()) {
-          logInfo("Device uuid = " + uuid + " Detach But Not Need Processed !");
+          RS_SPDLOG_INFO("Device uuid = " + uuid +
+                         " Detach But Not Need Processed !");
           return;
         }
       }
@@ -2312,7 +2148,7 @@ private:
       // 关闭设备
       ret = closeDevice(uuid);
       if (ret != 0) {
-        logError("Close Device uuid = " + uuid);
+        RS_SPDLOG_ERROR("Close Device uuid = " + uuid);
         return;
       }
 
@@ -2347,7 +2183,7 @@ private:
         std::shared_ptr<robosense::lidar::MonoImageData> mono_ptr =
             std::dynamic_pointer_cast<robosense::lidar::MonoImageData>(msgPtr);
         if (!mono_ptr) {
-          logError("Dynamic Convert To MonoImageData Is Nullptr !");
+          RS_SPDLOG_ERROR("Dynamic Convert To MonoImageData Is Nullptr !");
           return;
         }
 
@@ -2358,7 +2194,7 @@ private:
             std::dynamic_pointer_cast<robosense::lidar::StereoImageData>(
                 msgPtr);
         if (!stereo_ptr) {
-          logError("Dynamic Convert To StereoImageData Is Nullptr !");
+          RS_SPDLOG_ERROR("Dynamic Convert To StereoImageData Is Nullptr !");
           return;
         }
 
@@ -2413,7 +2249,7 @@ private:
 
   void exceptionCallback(const robosense::lidar::Error &error) {
     const std::string &error_info = "AC Driver Error: " + error.toString();
-    logError(error_info);
+    RS_SPDLOG_ERROR(error_info);
   }
 
   void
@@ -2421,12 +2257,6 @@ private:
               const std::shared_ptr<robosense::lidar::ImageData> &frame,
               const robosense::device::RSTimestampItem::Ptr &timestampPtr) {
     int ret;
-#if defined(ROS_FOUND)
-    auto jpeg_msg = std::make_shared<sensor_msgs::CompressedImage>();
-#elif defined(ROS2_FOUND)
-    auto jpeg_msg = std::make_shared<sensor_msgs::msg::CompressedImage>();
-#endif // defined(ROS_ROS2_FOUND)
-
     // 构造custom_time
     auto custom_time = robosense::convert::RSConvertManager::secondsToRosStamp(
         frame->timestamp);
@@ -2436,13 +2266,13 @@ private:
     switch (image_source_type) {
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC1: {
       if (frame->camera_mode != robosense::lidar::CameraMode::MONO) {
-        logWarn("AC1 Image Not MonoImageData !");
+        RS_SPDLOG_WARN("AC1 Image Not MonoImageData !");
         return;
       }
       std::shared_ptr<robosense::lidar::MonoImageData> imagePtr =
           std::dynamic_pointer_cast<robosense::lidar::MonoImageData>(frame);
       if (imagePtr == nullptr) {
-        logWarn("AC1 Image Right Cast To MonoImageData Failed !");
+        RS_SPDLOG_WARN("AC1 Image Right Cast To MonoImageData Failed !");
         return;
       }
       frame_data_ptr = imagePtr->data;
@@ -2453,13 +2283,13 @@ private:
     }
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
       if (frame->camera_mode != robosense::lidar::CameraMode::STEREO) {
-        logWarn("AC2 Image Left Not StereoImageData !");
+        RS_SPDLOG_WARN("AC2 Image Left Not StereoImageData !");
         return;
       }
       std::shared_ptr<robosense::lidar::StereoImageData> imagePtr =
           std::dynamic_pointer_cast<robosense::lidar::StereoImageData>(frame);
       if (imagePtr == nullptr) {
-        logWarn("AC2 Image Right Cast To StereoImageData Failed !");
+        RS_SPDLOG_WARN("AC2 Image Right Cast To StereoImageData Failed !");
         return;
       }
       frame_data_ptr = imagePtr->left_data;
@@ -2470,13 +2300,13 @@ private:
     }
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
       if (frame->camera_mode != robosense::lidar::CameraMode::STEREO) {
-        logWarn("AC2 Image Right Not StereoImageData !");
+        RS_SPDLOG_WARN("AC2 Image Right Not StereoImageData !");
         return;
       }
       std::shared_ptr<robosense::lidar::StereoImageData> imagePtr =
           std::dynamic_pointer_cast<robosense::lidar::StereoImageData>(frame);
       if (imagePtr == nullptr) {
-        logWarn("AC2 Image Right Cast To StereoImageData Failed !");
+        RS_SPDLOG_WARN("AC2 Image Right Cast To StereoImageData Failed !");
         return;
       }
       frame_data_ptr = imagePtr->right_data;
@@ -2488,11 +2318,12 @@ private:
     }
 
     if (frame_data_ptr == nullptr) {
-      logWarn("Image Jpeg Encode Frame Data Is Nullptr !");
+      RS_SPDLOG_WARN("Image Jpeg Encode Frame Data Is Nullptr !");
       return;
     }
 
     size_t jpegBufferLen = rgb_image_size;
+    auto jpeg_msg = MAKE_SHARED_ROS_COMPRESSED_IMAGE;
     jpeg_msg->data.resize(jpegBufferLen);
     unsigned char *jpegBuffer = jpeg_msg->data.data();
     switch (image_source_type) {
@@ -2501,7 +2332,8 @@ private:
                                      frame->data_bytes, jpegBuffer,
                                      jpegBufferLen);
       if (ret != 0) {
-        logError("AC1 Image Jpeg Encode Failed: ret = " + std::to_string(ret));
+        RS_SPDLOG_ERROR("AC1 Image Jpeg Encode Failed: ret = " +
+                        std::to_string(ret));
         return;
       }
       break;
@@ -2511,8 +2343,8 @@ private:
                                           frame->data_bytes, jpegBuffer,
                                           jpegBufferLen);
       if (ret != 0) {
-        logError("AC2 Image Left Jpeg Encode Failed: ret = " +
-                 std::to_string(ret));
+        RS_SPDLOG_ERROR("AC2 Image Left Jpeg Encode Failed: ret = " +
+                        std::to_string(ret));
         return;
       }
       break;
@@ -2522,8 +2354,8 @@ private:
           (unsigned char *)frame_data_ptr.get(), frame->data_bytes, jpegBuffer,
           jpegBufferLen);
       if (ret != 0) {
-        logError("AC2 Image Right Jpeg Encode Failed: ret = " +
-                 std::to_string(ret));
+        RS_SPDLOG_ERROR("AC2 Image Right Jpeg Encode Failed: ret = " +
+                        std::to_string(ret));
         return;
       }
       break;
@@ -2544,11 +2376,7 @@ private:
       jpeg_msg->header.frame_id = ac1_image_frame_id;
 
       timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-#if defined(ROS_FOUND)
-      publisher_jpeg.publish(*jpeg_msg);
-#elif defined(ROS2_FOUND)
       publisher_jpeg->publish(*jpeg_msg);
-#endif // ROS_ROS2_FOUND
       timestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
       if (timestamp_manager_ptr) {
         timestampPtr->channel_id =
@@ -2560,11 +2388,7 @@ private:
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
       jpeg_msg->header.frame_id = ac2_left_image_frame_id;
       timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-#if defined(ROS_FOUND)
-      publisher_jpeg_left.publish(*jpeg_msg);
-#elif defined(ROS2_FOUND)
       publisher_jpeg_left->publish(*jpeg_msg);
-#endif // ROS_ROS2_FOUND
       timestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
       if (timestamp_manager_ptr) {
         timestampPtr->channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
@@ -2576,11 +2400,7 @@ private:
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
       jpeg_msg->header.frame_id = ac2_right_image_frame_id;
       timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-#if defined(ROS_FOUND)
-      publisher_jpeg_right.publish(*jpeg_msg);
-#elif defined(ROS2_FOUND)
       publisher_jpeg_right->publish(*jpeg_msg);
-#endif // ROS_ROS2_FOUND
       timestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
       if (timestamp_manager_ptr) {
         timestampPtr->channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
@@ -2597,12 +2417,6 @@ private:
       const std::shared_ptr<robosense::lidar::ImageData> &frame,
       const robosense::device::RSTimestampItem::Ptr &timestampPtr) {
     int ret;
-#if defined(ROS_FOUND)
-    auto jpeg_msg = std::make_shared<sensor_msgs::CompressedImage>();
-#elif defined(ROS2_FOUND)
-    auto jpeg_msg = std::make_shared<sensor_msgs::msg::CompressedImage>();
-#endif // defined(ROS_ROS2_FOUND)
-
     // 构造custom_time
     auto custom_time = robosense::convert::RSConvertManager::secondsToRosStamp(
         frame->timestamp);
@@ -2612,13 +2426,13 @@ private:
     switch (image_source_type) {
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC1: {
       if (frame->camera_mode != robosense::lidar::CameraMode::MONO) {
-        logWarn("AC1 Image Not MonoImageData !");
+        RS_SPDLOG_WARN("AC1 Image Not MonoImageData !");
         return;
       }
       std::shared_ptr<robosense::lidar::MonoImageData> imagePtr =
           std::dynamic_pointer_cast<robosense::lidar::MonoImageData>(frame);
       if (imagePtr == nullptr) {
-        logWarn("AC1 Image Right Cast To MonoImageData Failed !");
+        RS_SPDLOG_WARN("AC1 Image Right Cast To MonoImageData Failed !");
         return;
       }
       frame_data_ptr = imagePtr->data;
@@ -2629,13 +2443,13 @@ private:
     }
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
       if (frame->camera_mode != robosense::lidar::CameraMode::STEREO) {
-        logWarn("AC2 Image Left Not StereoImageData !");
+        RS_SPDLOG_WARN("AC2 Image Left Not StereoImageData !");
         return;
       }
       std::shared_ptr<robosense::lidar::StereoImageData> imagePtr =
           std::dynamic_pointer_cast<robosense::lidar::StereoImageData>(frame);
       if (imagePtr == nullptr) {
-        logWarn("AC2 Image Right Cast To StereoImageData Failed !");
+        RS_SPDLOG_WARN("AC2 Image Right Cast To StereoImageData Failed !");
         return;
       }
       frame_data_ptr = imagePtr->left_data;
@@ -2646,13 +2460,13 @@ private:
     }
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
       if (frame->camera_mode != robosense::lidar::CameraMode::STEREO) {
-        logWarn("AC2 Image Right Not StereoImageData !");
+        RS_SPDLOG_WARN("AC2 Image Right Not StereoImageData !");
         return;
       }
       std::shared_ptr<robosense::lidar::StereoImageData> imagePtr =
           std::dynamic_pointer_cast<robosense::lidar::StereoImageData>(frame);
       if (imagePtr == nullptr) {
-        logWarn("AC2 Image Right Cast To StereoImageData Failed !");
+        RS_SPDLOG_WARN("AC2 Image Right Cast To StereoImageData Failed !");
         return;
       }
       frame_data_ptr = imagePtr->right_data;
@@ -2664,11 +2478,12 @@ private:
     }
 
     if (frame_data_ptr == nullptr) {
-      logWarn("Image Jpeg Encode Frame Data Is Nullptr !");
+      RS_SPDLOG_WARN("Image Jpeg Encode Frame Data Is Nullptr !");
       return;
     }
 
     size_t jpegBufferLen = rgb_image_size;
+    auto jpeg_msg = MAKE_SHARED_ROS_COMPRESSED_IMAGE;
     jpeg_msg->data.resize(jpegBufferLen);
     unsigned char *jpegBuffer = jpeg_msg->data.data();
     switch (image_source_type) {
@@ -2677,7 +2492,8 @@ private:
           (unsigned char *)frame_data_ptr.get(), frame->data_bytes, jpegBuffer,
           jpegBufferLen);
       if (ret != 0) {
-        logError("AC1 Image Jpeg Encode Failed: ret = " + std::to_string(ret));
+        RS_SPDLOG_ERROR("AC1 Image Jpeg Encode Failed: ret = " +
+                        std::to_string(ret));
         return;
       }
       break;
@@ -2687,8 +2503,8 @@ private:
           (unsigned char *)frame_data_ptr.get(), frame->data_bytes, jpegBuffer,
           jpegBufferLen);
       if (ret != 0) {
-        logError("AC2 Image Left Jpeg Encode Failed: ret = " +
-                 std::to_string(ret));
+        RS_SPDLOG_ERROR("AC2 Image Left Jpeg Encode Failed: ret = " +
+                        std::to_string(ret));
         return;
       }
       break;
@@ -2698,8 +2514,8 @@ private:
           (unsigned char *)frame_data_ptr.get(), frame->data_bytes, jpegBuffer,
           jpegBufferLen);
       if (ret != 0) {
-        logError("AC2 Image Right Jpeg Encode Failed: ret = " +
-                 std::to_string(ret));
+        RS_SPDLOG_ERROR("AC2 Image Right Jpeg Encode Failed: ret = " +
+                        std::to_string(ret));
         return;
       }
       break;
@@ -2720,11 +2536,7 @@ private:
       jpeg_msg->header.frame_id = ac1_image_frame_id;
 
       timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-#if defined(ROS_FOUND)
-      publisher_jpeg_rect.publish(*jpeg_msg);
-#elif defined(ROS2_FOUND)
-      publisher_jpeg_rect->publish(*jpeg_msg);
-#endif // ROS_ROS2_FOUND
+      publisher_jpeg_rectify->publish(*jpeg_msg);
       timestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
       if (timestamp_manager_ptr) {
         timestampPtr->channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
@@ -2736,11 +2548,7 @@ private:
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
       jpeg_msg->header.frame_id = ac2_left_image_frame_id;
       timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-#if defined(ROS_FOUND)
-      publisher_jpeg_rectify_left.publish(*jpeg_msg);
-#elif defined(ROS2_FOUND)
       publisher_jpeg_rectify_left->publish(*jpeg_msg);
-#endif // ROS_ROS2_FOUND
       timestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
       if (timestamp_manager_ptr) {
         timestampPtr->channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
@@ -2752,11 +2560,7 @@ private:
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
       jpeg_msg->header.frame_id = ac2_right_image_frame_id;
       timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-#if defined(ROS_FOUND)
-      publisher_jpeg_rectify_right.publish(*jpeg_msg);
-#elif defined(ROS2_FOUND)
       publisher_jpeg_rectify_right->publish(*jpeg_msg);
-#endif // ROS_ROS2_FOUND
       timestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
       if (timestamp_manager_ptr) {
         timestampPtr->channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
@@ -2772,8 +2576,9 @@ private:
                      const RS_IMAGE_SOURCE_TYPE image_source_type) {
 
     if (rgb_data_buf == nullptr || crop_rgb_data_buf == nullptr) {
-      logError("Crop Rgb Image Input rgb_data_buf or crop_rgb_data_buf is "
-               "Nullptr !");
+      RS_SPDLOG_ERROR(
+          "Crop Rgb Image Input rgb_data_buf or crop_rgb_data_buf is "
+          "Nullptr !");
       return -1;
     }
 
@@ -2832,7 +2637,7 @@ private:
     int ret = 0;
     // 校验数据分辨率
     if (frame->width != image_width_rgb || frame->height != image_height_rgb) {
-      logWarn("Image Size Not Match !");
+      RS_SPDLOG_WARN("Image Size Not Match !");
       return;
     }
 
@@ -2847,13 +2652,13 @@ private:
     switch (image_source_type) {
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC1: {
       if (frame->camera_mode != robosense::lidar::CameraMode::MONO) {
-        logWarn("AC1 Image Not MonoImageData !");
+        RS_SPDLOG_WARN("AC1 Image Not MonoImageData !");
         return;
       }
       std::shared_ptr<robosense::lidar::MonoImageData> imagePtr =
           std::dynamic_pointer_cast<robosense::lidar::MonoImageData>(frame);
       if (imagePtr == nullptr) {
-        logWarn("AC1 Image Right Cast To MonoImageData Failed !");
+        RS_SPDLOG_WARN("AC1 Image Right Cast To MonoImageData Failed !");
         return;
       }
       frame_data_ptr = imagePtr->data;
@@ -2872,13 +2677,13 @@ private:
     }
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
       if (frame->camera_mode != robosense::lidar::CameraMode::STEREO) {
-        logWarn("AC2 Image Left Not StereoImageData !");
+        RS_SPDLOG_WARN("AC2 Image Left Not StereoImageData !");
         return;
       }
       std::shared_ptr<robosense::lidar::StereoImageData> imagePtr =
           std::dynamic_pointer_cast<robosense::lidar::StereoImageData>(frame);
       if (imagePtr == nullptr) {
-        logWarn("AC2 Image Right Cast To StereoImageData Failed !");
+        RS_SPDLOG_WARN("AC2 Image Right Cast To StereoImageData Failed !");
         return;
       }
       frame_data_ptr = imagePtr->left_data;
@@ -2897,13 +2702,13 @@ private:
     }
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
       if (frame->camera_mode != robosense::lidar::CameraMode::STEREO) {
-        logWarn("AC2 Image Right Not StereoImageData !");
+        RS_SPDLOG_WARN("AC2 Image Right Not StereoImageData !");
         return;
       }
       std::shared_ptr<robosense::lidar::StereoImageData> imagePtr =
           std::dynamic_pointer_cast<robosense::lidar::StereoImageData>(frame);
       if (imagePtr == nullptr) {
-        logWarn("AC2 Image Right Cast To StereoImageData Failed !");
+        RS_SPDLOG_WARN("AC2 Image Right Cast To StereoImageData Failed !");
         return;
       }
       frame_data_ptr = imagePtr->right_data;
@@ -2924,7 +2729,7 @@ private:
     }
 
     if (frame_data_ptr == nullptr) {
-      logWarn("Image Rgb Frame Data Is Nullptr !");
+      RS_SPDLOG_WARN("Image Rgb Frame Data Is Nullptr !");
       return;
     }
 
@@ -2946,7 +2751,8 @@ private:
         ret = rgb_codec_ptr->NV12ToRGB(frame_data_ptr.get(), frame->data_bytes,
                                        rgb_data_buf, rgb_image_size);
         if (ret != 0) {
-          logWarn("AC1 NV12 Image To Rgb Failed: ret = " + std::to_string(ret));
+          RS_SPDLOG_WARN("AC1 NV12 Image To Rgb Failed: ret = " +
+                         std::to_string(ret));
           return;
         }
 
@@ -2957,8 +2763,8 @@ private:
                                             frame->data_bytes, rgb_data_buf,
                                             rgb_image_size);
         if (ret != 0) {
-          logWarn("AC2 Left NV12 Image To Rgb Failed: ret = " +
-                  std::to_string(ret));
+          RS_SPDLOG_WARN("AC2 Left NV12 Image To Rgb Failed: ret = " +
+                         std::to_string(ret));
           return;
         }
 
@@ -2969,8 +2775,8 @@ private:
                                              frame->data_bytes, rgb_data_buf,
                                              rgb_image_size);
         if (ret != 0) {
-          logWarn("AC2 Right NV12 Image To Rgb Failed: ret = " +
-                  std::to_string(ret));
+          RS_SPDLOG_WARN("AC2 Right NV12 Image To Rgb Failed: ret = " +
+                         std::to_string(ret));
           return;
         }
         break;
@@ -2986,9 +2792,9 @@ private:
       rgb_data_buf = frame_data_ptr.get();
     } else {
       // Not Support
-      logWarn("Image Rgb Frame Not Support Format: " +
-              std::to_string(frame->frame_format) +
-              ", data_bytes = " + std::to_string(frame->data_bytes));
+      RS_SPDLOG_WARN("Image Rgb Frame Not Support Format: " +
+                     std::to_string(frame->frame_format) +
+                     ", data_bytes = " + std::to_string(frame->data_bytes));
       return;
     }
 
@@ -3039,18 +2845,13 @@ private:
 
     // Publish ROS/ROS2 RGB Image Message
     if (!enable_ros2_zero_copy) {
-#if defined(ROS_FOUND)
-      auto rgb_msg = std::make_shared<sensor_msgs::Image>();
-#elif defined(ROS2_FOUND)
-      auto rgb_msg = std::make_shared<sensor_msgs::msg::Image>();
-#endif // defined(ROS_ROS2_FOUND)
-
+      auto rgb_msg = MAKE_SHARED_ROS_IMAGE;
       // 构造Ros/Ros2 消息
       ret = robosense::convert::RSConvertManager::toRosImageMessage(
           rgb_image_data_width, rgb_image_data_height, custom_time,
           rgb_image_data_frame_id, rgb_data_buf, rgb_image_data_size, rgb_msg);
       if (ret != 0) {
-        logError(
+        RS_SPDLOG_ERROR(
             "Convert To ROS/ROS2 Message Failed: rgb_image_data_frame_id = " +
             rgb_image_data_frame_id);
         return;
@@ -3062,63 +2863,36 @@ private:
       switch (image_source_type) {
       case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC1: {
         timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-#if defined(ROS_FOUND)
         if (camera_info_ptr) {
-          sensor_msgs::CameraInfo camera_info = *camera_info_ptr;
-          camera_info.header = rgb_msg->header;
-          publisher_camera_info.publish(camera_info);
-        }
-        publisher_rgb.publish(*rgb_msg);
-#elif defined(ROS2_FOUND)
-        if (camera_info_ptr) {
-          sensor_msgs::msg::CameraInfo camera_info = *camera_info_ptr;
+          ROS_CAMERAINFO camera_info = *camera_info_ptr;
           camera_info.header = rgb_msg->header;
           publisher_camera_info->publish(camera_info);
         }
         publisher_rgb->publish(std::move(*rgb_msg));
-#endif // ROS_ROS2_FOUND
         channel_id =
             robosense::device::RS_CHANNEL_ID_TYPE::RS_CHANNEL_ID_RGB_IMAGE;
         break;
       }
       case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
         timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-#if defined(ROS_FOUND)
         if (left_camera_info_ptr) {
-          sensor_msgs::CameraInfo camera_info = *left_camera_info_ptr;
-          camera_info.header = rgb_msg->header;
-          publisher_left_camera_info.publish(camera_info);
-        }
-        publisher_rgb_left.publish(*rgb_msg);
-#elif defined(ROS2_FOUND)
-        if (left_camera_info_ptr) {
-          sensor_msgs::msg::CameraInfo camera_info = *left_camera_info_ptr;
+          ROS_CAMERAINFO camera_info = *left_camera_info_ptr;
           camera_info.header = rgb_msg->header;
           publisher_left_camera_info->publish(camera_info);
         }
         publisher_rgb_left->publish(std::move(*rgb_msg));
-#endif // ROS_ROS2_FOUND
         channel_id =
             robosense::device::RS_CHANNEL_ID_TYPE::RS_CHANNEL_ID_RGB_LEFT_IMAGE;
         break;
       }
       case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
         timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-#if defined(ROS_FOUND)
         if (right_camera_info_ptr) {
-          sensor_msgs::CameraInfo camera_info = *right_camera_info_ptr;
-          camera_info.header = rgb_msg->header;
-          publisher_right_camera_info.publish(camera_info);
-        }
-        publisher_rgb_right.publish(*rgb_msg);
-#elif defined(ROS2_FOUND)
-        if (right_camera_info_ptr) {
-          sensor_msgs::msg::CameraInfo camera_info = *right_camera_info_ptr;
+          ROS_CAMERAINFO camera_info = *right_camera_info_ptr;
           camera_info.header = rgb_msg->header;
           publisher_right_camera_info->publish(camera_info);
         }
         publisher_rgb_right->publish(std::move(*rgb_msg));
-#endif // ROS_ROS2_FOUND
         channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
             RS_CHANNEL_ID_RGB_RIGHT_IMAGE;
         break;
@@ -3134,11 +2908,11 @@ private:
     else if (enable_ros2_zero_copy) {
       switch (image_source_type) {
       case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC1: {
-        rclcpp::LoanedMessage<robosense_msgs::msg::RsImage8M> loanedMsg =
+        rclcpp::LoanedMessage<ROS_ZEROCOPY_IMAGE8M> loanedMsg =
             publisher_rgb_loan->borrow_loaned_message();
         if (!loanedMsg.is_valid()) {
           // 获取消息失败，丢弃该消息
-          logError("Failed to get AC1 Rgb LoanMessage !");
+          RS_SPDLOG_ERROR("Failed to get AC1 Rgb LoanMessage !");
           return;
         }
         // 引用方式获取实际的消息
@@ -3146,14 +2920,13 @@ private:
         auto rgb_msg = &msg;
         // 构造零拷贝消息
         robosense::convert::RSConvertManager::toZeroCopyImageMessage<
-            robosense_msgs::msg::RsImage8M>(
-            rgb_image_data_width, rgb_image_data_height, custom_time,
-            rgb_image_data_frame_id, rgb_data_buf, rgb_image_data_size,
-            rgb_msg);
+            ROS_ZEROCOPY_IMAGE8M>(rgb_image_data_width, rgb_image_data_height,
+                                  custom_time, rgb_image_data_frame_id,
+                                  rgb_data_buf, rgb_image_data_size, rgb_msg);
 
         timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
         if (camera_info_ptr) {
-          sensor_msgs::msg::CameraInfo camera_info = *camera_info_ptr;
+          ROS_CAMERAINFO camera_info = *camera_info_ptr;
           camera_info.header.stamp = rgb_msg->header.stamp;
           camera_info.header.frame_id = rgb_image_data_frame_id;
           publisher_camera_info->publish(camera_info);
@@ -3168,11 +2941,11 @@ private:
         break;
       }
       case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
-        rclcpp::LoanedMessage<robosense_msgs::msg::RsImage4M> loanedMsg =
+        rclcpp::LoanedMessage<ROS_ZEROCOPY_IMAGE4M> loanedMsg =
             publisher_rgb_left_loan->borrow_loaned_message();
         if (!loanedMsg.is_valid()) {
           // 获取消息失败，丢弃该消息
-          logError("Failed to get AC2 Rgb Left LoanMessage !");
+          RS_SPDLOG_ERROR("Failed to get AC2 Rgb Left LoanMessage !");
           return;
         }
         // 引用方式获取实际的消息
@@ -3181,14 +2954,13 @@ private:
 
         // 构造零拷贝消息
         robosense::convert::RSConvertManager::toZeroCopyImageMessage<
-            robosense_msgs::msg::RsImage4M>(
-            rgb_image_data_width, rgb_image_data_height, custom_time,
-            rgb_image_data_frame_id, rgb_data_buf, rgb_image_data_size,
-            rgb_msg);
+            ROS_ZEROCOPY_IMAGE4M>(rgb_image_data_width, rgb_image_data_height,
+                                  custom_time, rgb_image_data_frame_id,
+                                  rgb_data_buf, rgb_image_data_size, rgb_msg);
 
         timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
         if (left_camera_info_ptr) {
-          sensor_msgs::msg::CameraInfo camera_info = *left_camera_info_ptr;
+          ROS_CAMERAINFO camera_info = *left_camera_info_ptr;
           camera_info.header.stamp = rgb_msg->header.stamp;
           camera_info.header.frame_id = rgb_image_data_frame_id;
           publisher_left_camera_info->publish(camera_info);
@@ -3203,11 +2975,11 @@ private:
         break;
       }
       case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
-        rclcpp::LoanedMessage<robosense_msgs::msg::RsImage4M> loanedMsg =
+        rclcpp::LoanedMessage<ROS_ZEROCOPY_IMAGE4M> loanedMsg =
             publisher_rgb_right_loan->borrow_loaned_message();
         if (!loanedMsg.is_valid()) {
           // 获取消息失败，丢弃该消息
-          logError("Failed to get AC2 Rgb Right LoanMessage !");
+          RS_SPDLOG_ERROR("Failed to get AC2 Rgb Right LoanMessage !");
           return;
         }
         // 引用方式获取实际的消息
@@ -3216,14 +2988,13 @@ private:
 
         // 构造零拷贝消息
         robosense::convert::RSConvertManager::toZeroCopyImageMessage<
-            robosense_msgs::msg::RsImage4M>(
-            rgb_image_data_width, rgb_image_data_height, custom_time,
-            rgb_image_data_frame_id, rgb_data_buf, rgb_image_data_size,
-            rgb_msg);
+            ROS_ZEROCOPY_IMAGE4M>(rgb_image_data_width, rgb_image_data_height,
+                                  custom_time, rgb_image_data_frame_id,
+                                  rgb_data_buf, rgb_image_data_size, rgb_msg);
 
         timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
         if (right_camera_info_ptr) {
-          sensor_msgs::msg::CameraInfo camera_info = *right_camera_info_ptr;
+          ROS_CAMERAINFO camera_info = *right_camera_info_ptr;
           camera_info.header.stamp = rgb_msg->header.stamp;
           camera_info.header.frame_id = rgb_image_data_frame_id;
           publisher_right_camera_info->publish(camera_info);
@@ -3462,13 +3233,13 @@ private:
     switch (image_source_type) {
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC1: {
       if (frame->camera_mode != robosense::lidar::CameraMode::MONO) {
-        logWarn("AC1 Image Not MonoImageData !");
+        RS_SPDLOG_WARN("AC1 Image Not MonoImageData !");
         return;
       }
       std::shared_ptr<robosense::lidar::MonoImageData> imagePtr =
           std::dynamic_pointer_cast<robosense::lidar::MonoImageData>(frame);
       if (imagePtr == nullptr) {
-        logWarn("AC1 Image Right Cast To MonoImageData Failed !");
+        RS_SPDLOG_WARN("AC1 Image Right Cast To MonoImageData Failed !");
         return;
       }
       frame_data_ptr = imagePtr->data;
@@ -3485,13 +3256,13 @@ private:
     }
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
       if (frame->camera_mode != robosense::lidar::CameraMode::STEREO) {
-        logWarn("AC2 Image Left Not StereoImageData !");
+        RS_SPDLOG_WARN("AC2 Image Left Not StereoImageData !");
         return;
       }
       std::shared_ptr<robosense::lidar::StereoImageData> imagePtr =
           std::dynamic_pointer_cast<robosense::lidar::StereoImageData>(frame);
       if (imagePtr == nullptr) {
-        logWarn("AC2 Image Right Cast To StereoImageData Failed !");
+        RS_SPDLOG_WARN("AC2 Image Right Cast To StereoImageData Failed !");
         return;
       }
       frame_data_ptr = imagePtr->left_data;
@@ -3508,13 +3279,13 @@ private:
     }
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
       if (frame->camera_mode != robosense::lidar::CameraMode::STEREO) {
-        logWarn("AC2 Image Right Not StereoImageData !");
+        RS_SPDLOG_WARN("AC2 Image Right Not StereoImageData !");
         return;
       }
       std::shared_ptr<robosense::lidar::StereoImageData> imagePtr =
           std::dynamic_pointer_cast<robosense::lidar::StereoImageData>(frame);
       if (imagePtr == nullptr) {
-        logWarn("AC2 Image Right Cast To StereoImageData Failed !");
+        RS_SPDLOG_WARN("AC2 Image Right Cast To StereoImageData Failed !");
         return;
       }
       frame_data_ptr = imagePtr->right_data;
@@ -3541,7 +3312,7 @@ private:
     switch (image_source_type) {
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC1: {
       if (!camera_rectify_map_valid) {
-        logWarn("AC1 Image Rectify Map Not Valid !");
+        RS_SPDLOG_WARN("AC1 Image Rectify Map Not Valid !");
         return;
       }
       cv::Mat inputRgbMat(frame->height, frame->width, CV_8UC3,
@@ -3553,7 +3324,7 @@ private:
     }
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
       if (!left_camera_rectify_map_valid) {
-        logWarn("AC2 Image Left Rectify Map Not Valid !");
+        RS_SPDLOG_WARN("AC2 Image Left Rectify Map Not Valid !");
         return;
       }
       cv::Mat inputRgbMat(frame->height, frame->width, CV_8UC3,
@@ -3565,7 +3336,7 @@ private:
     }
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
       if (!right_camera_rectify_map_valid) {
-        logWarn("AC2 Image Right Rectify Map Not Valid !");
+        RS_SPDLOG_WARN("AC2 Image Right Rectify Map Not Valid !");
         return;
       }
       cv::Mat inputRgbMat(frame->height, frame->width, CV_8UC3,
@@ -3578,8 +3349,8 @@ private:
     } // switch
     // std::cout << "run here 333" << std::endl;
     if (outputRectImage.empty()) {
-      logWarn("Image Rectify Failed: rgb_image_data_frame_id = " +
-              rgb_image_data_frame_id);
+      RS_SPDLOG_WARN("Image Rectify Failed: rgb_image_data_frame_id = " +
+                     rgb_image_data_frame_id);
       return;
     }
 
@@ -3591,18 +3362,13 @@ private:
 
     // Publish ROS/ROS2 RGB Image Message
     if (!enable_ros2_zero_copy) {
-#if defined(ROS_FOUND)
-      auto rgb_msg = std::make_shared<sensor_msgs::Image>();
-#elif defined(ROS2_FOUND)
-      auto rgb_msg = std::make_shared<sensor_msgs::msg::Image>();
-#endif // defined(ROS_ROS2_FOUND)
-
+      auto rgb_msg = MAKE_SHARED_ROS_IMAGE;
       // 构造Ros消息
       ret = robosense::convert::RSConvertManager::toRosImageMessage(
           rgb_image_data_width, rgb_image_data_height, custom_time,
           rgb_image_data_frame_id, rgb_data_buf, rgb_image_data_size, rgb_msg);
       if (ret != 0) {
-        logError(
+        RS_SPDLOG_ERROR(
             "Convert To Ros/Ros2 Message Failed: rgb_image_data_frame_id = " +
             rgb_image_data_frame_id);
         return;
@@ -3613,33 +3379,21 @@ private:
           RS_CHANNEL_ID_TYPE::RS_CHANNEL_ID_RGB_RECTIFY_IMAGE;
       switch (image_source_type) {
       case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC1: {
-#if defined(ROS_FOUND)
-        publisher_rgb_rect.publish(*rgb_msg);
-#elif defined(ROS2_FOUND)
-        publisher_rgb_rect->publish(std::move(*rgb_msg));
-#endif // ROS_ROS2_FOUND
+        publisher_rgb_rectify->publish(std::move(*rgb_msg));
         channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
             RS_CHANNEL_ID_RGB_RECTIFY_IMAGE;
         break;
       }
       case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
         timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-#if defined(ROS_FOUND)
-        publisher_rgb_rectify_left.publish(*rgb_msg);
-#elif defined(ROS2_FOUND)
         publisher_rgb_rectify_left->publish(std::move(*rgb_msg));
-#endif // ROS_ROS2_FOUND
         channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
             RS_CHANNEL_ID_RGB_RECTIFY_LEFT_IMAGE;
         break;
       }
       case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
         timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-#if defined(ROS_FOUND)
-        publisher_rgb_rectify_right.publish(*rgb_msg);
-#elif defined(ROS2_FOUND)
         publisher_rgb_rectify_right->publish(std::move(*rgb_msg));
-#endif // ROS_ROS2_FOUND
         channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
             RS_CHANNEL_ID_RGB_RECTIFY_RIGHT_IMAGE;
         break;
@@ -3657,21 +3411,20 @@ private:
           RS_CHANNEL_ID_TYPE::RS_CHANNEL_ID_RGB_RECTIFY_IMAGE;
       switch (image_source_type) {
       case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC1: {
-        rclcpp::LoanedMessage<robosense_msgs::msg::RsImage8M> loanedMsg =
+        rclcpp::LoanedMessage<ROS_ZEROCOPY_IMAGE8M> loanedMsg =
             publisher_rgb_loan->borrow_loaned_message();
         if (!loanedMsg.is_valid()) {
           // 获取消息失败，丢弃该消息
-          logError("Failed to get AC1 Rgb LoanMessage !");
+          RS_SPDLOG_ERROR("Failed to get AC1 Rgb LoanMessage !");
           return;
         }
         // 引用方式获取实际的消息
         auto &msg = loanedMsg.get();
         auto rgb_msg = &msg;
         robosense::convert::RSConvertManager::toZeroCopyImageMessage<
-            robosense_msgs::msg::RsImage8M>(
-            rgb_image_data_width, rgb_image_data_height, custom_time,
-            rgb_image_data_frame_id, rgb_data_buf, rgb_image_data_size,
-            rgb_msg);
+            ROS_ZEROCOPY_IMAGE8M>(rgb_image_data_width, rgb_image_data_height,
+                                  custom_time, rgb_image_data_frame_id,
+                                  rgb_data_buf, rgb_image_data_size, rgb_msg);
         timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
         publisher_rgb_rectify_loan->publish(std::move(*rgb_msg));
         channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
@@ -3679,21 +3432,20 @@ private:
         break;
       }
       case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
-        rclcpp::LoanedMessage<robosense_msgs::msg::RsImage4M> loanedMsg =
+        rclcpp::LoanedMessage<ROS_ZEROCOPY_IMAGE4M> loanedMsg =
             publisher_rgb_left_loan->borrow_loaned_message();
         if (!loanedMsg.is_valid()) {
           // 获取消息失败，丢弃该消息
-          logError("Failed to get AC2 Rgb Left LoanMessage !");
+          RS_SPDLOG_ERROR("Failed to get AC2 Rgb Left LoanMessage !");
           return;
         }
         // 引用方式获取实际的消息
         auto &msg = loanedMsg.get();
         auto rgb_msg = &msg;
         robosense::convert::RSConvertManager::toZeroCopyImageMessage<
-            robosense_msgs::msg::RsImage4M>(
-            rgb_image_data_width, rgb_image_data_height, custom_time,
-            rgb_image_data_frame_id, rgb_data_buf, rgb_image_data_size,
-            rgb_msg);
+            ROS_ZEROCOPY_IMAGE4M>(rgb_image_data_width, rgb_image_data_height,
+                                  custom_time, rgb_image_data_frame_id,
+                                  rgb_data_buf, rgb_image_data_size, rgb_msg);
         timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
         publisher_rgb_rectify_left_loan->publish(std::move(*rgb_msg));
         channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
@@ -3701,21 +3453,20 @@ private:
         break;
       }
       case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
-        rclcpp::LoanedMessage<robosense_msgs::msg::RsImage4M> loanedMsg =
+        rclcpp::LoanedMessage<ROS_ZEROCOPY_IMAGE4M> loanedMsg =
             publisher_rgb_right_loan->borrow_loaned_message();
         if (!loanedMsg.is_valid()) {
           // 获取消息失败，丢弃该消息
-          logError("Failed to get AC2 Rgb Right LoanMessage !");
+          RS_SPDLOG_ERROR("Failed to get AC2 Rgb Right LoanMessage !");
           return;
         }
         // 引用方式获取实际的消息
         auto &msg = loanedMsg.get();
         auto rgb_msg = &msg;
         robosense::convert::RSConvertManager::toZeroCopyImageMessage<
-            robosense_msgs::msg::RsImage4M>(
-            rgb_image_data_width, rgb_image_data_height, custom_time,
-            rgb_image_data_frame_id, rgb_data_buf, rgb_image_data_size,
-            rgb_msg);
+            ROS_ZEROCOPY_IMAGE4M>(rgb_image_data_width, rgb_image_data_height,
+                                  custom_time, rgb_image_data_frame_id,
+                                  rgb_data_buf, rgb_image_data_size, rgb_msg);
         timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
         publisher_rgb_rectify_right_loan->publish(std::move(*rgb_msg));
         channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
@@ -3836,29 +3587,22 @@ private:
     int ret = 0;
     if (!enable_ac2_pointcloud_wave_split) {
       if (!enable_ros2_zero_copy) {
-#if defined(ROS_FOUND)
-        auto cloud_msg = std::make_shared<sensor_msgs::PointCloud2>();
-#elif defined(ROS2_FOUND)
-        auto cloud_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
-#endif // ROS_ROS2_FOUND
+        auto cloud_msg = MAKE_SHARED_ROS_POINTCLOUD2;
 
         // 构造ROS/ROS2 消息
         frame->frame_id = point_frame_id;
         ret = robosense::convert::RSConvertManager::toRosPointCloud2Message(
             frame, cloud_msg);
         if (ret != 0) {
-          logError("Convert To PointCloud2 Ros/Ros2 Message Failed: "
-                   "point_frame_id = " +
-                   point_frame_id + ", ret = " + std::to_string(ret) + " !");
+          RS_SPDLOG_ERROR("Convert To PointCloud2 Ros/Ros2 Message Failed: "
+                          "point_frame_id = " +
+                          point_frame_id + ", ret = " + std::to_string(ret) +
+                          " !");
           return;
         }
 
         timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-#if defined(ROS_FOUND)
-        publisher_depth.publish(*cloud_msg);
-#elif defined(ROS2_FOUND)
         publisher_depth->publish(*cloud_msg);
-#endif // ROS_ROS2_FOUND
         timestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
         if (timestamp_manager_ptr) {
           timestampPtr->channel_id =
@@ -3877,7 +3621,7 @@ private:
           // 判断消息是否可用，可能出现获取消息失败导致消息不可用的情况
           if (!loanedMsg.is_valid()) {
             // 获取消息失败，丢弃该消息
-            logError("Failed to get LoanMessage(AC1 PointCloud) !");
+            RS_SPDLOG_ERROR("Failed to get LoanMessage(AC1 PointCloud) !");
             return;
           }
           // 引用方式获取实际的消息
@@ -3888,9 +3632,10 @@ private:
           ret = robosense::convert::RSConvertManager::toZeroCopyCloudMessage(
               frame, cloud_msg);
           if (ret != 0) {
-            logError("Convert To robosense_msgs::msg::RsPointCloud1M Ros/Ros2 "
-                     "Message Failed: point_frame_id = " +
-                     point_frame_id + ", ret = " + std::to_string(ret) + " !");
+            RS_SPDLOG_ERROR(
+                "Convert To robosense_msgs::msg::RsPointCloud1M Ros/Ros2 "
+                "Message Failed: point_frame_id = " +
+                point_frame_id + ", ret = " + std::to_string(ret) + " !");
             return;
           }
 
@@ -3917,7 +3662,7 @@ private:
           // 判断消息是否可用，可能出现获取消息失败导致消息不可用的情况
           if (!loanedMsg.is_valid()) {
             // 获取消息失败，丢弃该消息
-            logError("Failed to get LoanMessage(AC2 PointCloud) !");
+            RS_SPDLOG_ERROR("Failed to get LoanMessage(AC2 PointCloud) !");
             return;
           }
           // 引用方式获取实际的消息
@@ -3928,9 +3673,10 @@ private:
           ret = robosense::convert::RSConvertManager::toZeroCopyCloudMessage(
               frame, cloud_msg);
           if (ret != 0) {
-            logError("Convert To robosense_msgs::msg::RsPointCloud4M Ros/Ros2 "
-                     "Message Failed: point_frame_id = " +
-                     point_frame_id + ", ret = " + std::to_string(ret) + " !");
+            RS_SPDLOG_ERROR(
+                "Convert To robosense_msgs::msg::RsPointCloud4M Ros/Ros2 "
+                "Message Failed: point_frame_id = " +
+                point_frame_id + ", ret = " + std::to_string(ret) + " !");
             return;
           }
 
@@ -3965,9 +3711,9 @@ private:
 
       const size_t point_cnt = frame->size();
       if (point_cnt % 2 != 0) {
-        logError("AC2 PointCloud Point Cnt Not 2xTimes: point_cnt = " +
-                 std::to_string(point_cnt) +
-                 ", point_frame_id = " + point_frame_id);
+        RS_SPDLOG_ERROR("AC2 PointCloud Point Cnt Not 2xTimes: point_cnt = " +
+                        std::to_string(point_cnt) +
+                        ", point_frame_id = " + point_frame_id);
         return;
       }
 
@@ -3990,45 +3736,31 @@ private:
       }
 
       if (!enable_ros2_zero_copy) {
-#if defined(ROS_FOUND)
-        auto cloud_ac2_wave1_msg = std::make_shared<sensor_msgs::PointCloud2>();
-        auto cloud_ac2_wave2_msg = std::make_shared<sensor_msgs::PointCloud2>();
-#elif defined(ROS2_FOUND)
-        auto cloud_ac2_wave1_msg =
-            std::make_shared<sensor_msgs::msg::PointCloud2>();
-        auto cloud_ac2_wave2_msg =
-            std::make_shared<sensor_msgs::msg::PointCloud2>();
-#endif // ROS_ROS2_FOUND
-
+        auto cloud_ac2_wave1_msg = MAKE_SHARED_ROS_POINTCLOUD2;
+        auto cloud_ac2_wave2_msg = MAKE_SHARED_ROS_POINTCLOUD2;
         ret = robosense::convert::RSConvertManager::toRosPointCloud2Message(
             ac2_wave1_pointcloud_ptr, cloud_ac2_wave1_msg);
         if (ret != 0) {
-          logError("Convert To PointCloud2 Ros/Ros2 "
-                   "Message Failed(cloud_ac2_wave1_msg): point_frame_id = " +
-                   point_frame_id + ", ret = " + std::to_string(ret) + " !");
+          RS_SPDLOG_ERROR(
+              "Convert To PointCloud2 Ros/Ros2 "
+              "Message Failed(cloud_ac2_wave1_msg): point_frame_id = " +
+              point_frame_id + ", ret = " + std::to_string(ret) + " !");
           return;
         }
 
         ret = robosense::convert::RSConvertManager::toRosPointCloud2Message(
             ac2_wave2_pointcloud_ptr, cloud_ac2_wave2_msg);
         if (ret != 0) {
-          logError("Convert To PointCloud2 Ros/Ros2 "
-                   "Message Failed(cloud_ac2_wave2_msg): point_frame_id = " +
-                   point_frame_id + ", ret = " + std::to_string(ret) + " !");
+          RS_SPDLOG_ERROR(
+              "Convert To PointCloud2 Ros/Ros2 "
+              "Message Failed(cloud_ac2_wave2_msg): point_frame_id = " +
+              point_frame_id + ", ret = " + std::to_string(ret) + " !");
           return;
         }
 
         timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-#if defined(ROS_FOUND)
-        publisher_depth.publish(*cloud_ac2_wave1_msg);
-#elif defined(ROS2_FOUND)
         publisher_depth->publish(*cloud_ac2_wave1_msg);
-#endif // ROS_ROS2_FOUND
-#if defined(ROS_FOUND)
-        publisher_depth_ac2_wave2.publish(*cloud_ac2_wave2_msg);
-#elif defined(ROS2_FOUND)
         publisher_depth_ac2_wave2->publish(*cloud_ac2_wave2_msg);
-#endif // ROS_ROS2_FOUND
         timestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
         if (timestamp_manager_ptr) {
           timestampPtr->channel_id =
@@ -4056,7 +3788,7 @@ private:
         // 判断消息是否可用，可能出现获取消息失败导致消息不可用的情况
         if (!loanedWave1Msg.is_valid()) {
           // 获取消息失败，丢弃该消息
-          logError("Failed to get LoanMessage(cloud_ac2_wave1_msg) !");
+          RS_SPDLOG_ERROR("Failed to get LoanMessage(cloud_ac2_wave1_msg) !");
           return;
         }
         // 引用方式获取实际的消息
@@ -4068,7 +3800,7 @@ private:
         // 判断消息是否可用，可能出现获取消息失败导致消息不可用的情况
         if (!loanedWave2Msg.is_valid()) {
           // 获取消息失败，丢弃该消息
-          logError("Failed to get LoanMessage(cloud_ac2_wave2_msg) !");
+          RS_SPDLOG_ERROR("Failed to get LoanMessage(cloud_ac2_wave2_msg) !");
           return;
         }
         // 引用方式获取实际的消息
@@ -4078,18 +3810,20 @@ private:
         ret = robosense::convert::RSConvertManager::toZeroCopyCloudMessage(
             ac2_wave1_pointcloud_ptr, cloud_ac2_wave1_msg);
         if (ret != 0) {
-          logError("Convert To robosense_msgs::msg::RsPointCloud4M Ros/Ros2 "
-                   "Message Failed(cloud_ac2_wave1_msg): point_frame_id = " +
-                   point_frame_id + ", ret = " + std::to_string(ret) + " !");
+          RS_SPDLOG_ERROR(
+              "Convert To robosense_msgs::msg::RsPointCloud4M Ros/Ros2 "
+              "Message Failed(cloud_ac2_wave1_msg): point_frame_id = " +
+              point_frame_id + ", ret = " + std::to_string(ret) + " !");
           return;
         }
 
         ret = robosense::convert::RSConvertManager::toZeroCopyCloudMessage(
             ac2_wave2_pointcloud_ptr, cloud_ac2_wave2_msg);
         if (ret != 0) {
-          logError("Convert To robosense_msgs::msg::RsPointCloud4M Ros/Ros2 "
-                   "Message Failed(cloud_ac2_wave2_msg): point_frame_id = " +
-                   point_frame_id + ", ret = " + std::to_string(ret) + " !");
+          RS_SPDLOG_ERROR(
+              "Convert To robosense_msgs::msg::RsPointCloud4M Ros/Ros2 "
+              "Message Failed(cloud_ac2_wave2_msg): point_frame_id = " +
+              point_frame_id + ", ret = " + std::to_string(ret) + " !");
           return;
         }
 
@@ -4099,12 +3833,12 @@ private:
         try {
           publisher_depth_ac2_loan->publish(std::move(loanedWave1Msg));
         } catch (...) {
-          logWarn("Publish AC2 Wave1 ZeroCopy Ros Message Failed !");
+          RS_SPDLOG_WARN("Publish AC2 Wave1 ZeroCopy Ros Message Failed !");
         }
         try {
           publisher_depth_ac2_wave2_loan->publish(std::move(loanedWave2Msg));
         } catch (...) {
-          logWarn("Publish AC2 Wave2 ZeroCopy Ros Message Failed !");
+          RS_SPDLOG_WARN("Publish AC2 Wave2 ZeroCopy Ros Message Failed !");
         }
         timestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
         if (timestamp_manager_ptr) {
@@ -4133,32 +3867,11 @@ private:
 
   void imu_handle(const std::shared_ptr<robosense::lidar::ImuData> &msgPtr,
                   const robosense::device::RSTimestampItem::Ptr &timestampPtr) {
-    const auto custom_time =
-        robosense::convert::RSConvertManager::secondsToRosStamp(
-            msgPtr->timestamp);
-#if defined(ROS_FOUND)
-    auto imu_msg = std::make_shared<sensor_msgs::Imu>();
-#elif defined(ROS2_FOUND)
-    auto imu_msg = std::make_shared<sensor_msgs::msg::Imu>();
-#endif // ROS_ROS2_FOUND
-
-    imu_msg->header.stamp = custom_time;
-    imu_msg->header.frame_id = imu_frame_id;
-
-    // Populate IMU message with acceleration and gyro data
-    imu_msg->linear_acceleration.x = msgPtr->linear_acceleration_x;
-    imu_msg->linear_acceleration.y = msgPtr->linear_acceleration_y;
-    imu_msg->linear_acceleration.z = msgPtr->linear_acceleration_z;
-    imu_msg->angular_velocity.x = msgPtr->angular_velocity_x;
-    imu_msg->angular_velocity.y = msgPtr->angular_velocity_y;
-    imu_msg->angular_velocity.z = msgPtr->angular_velocity_z;
-
+    auto imu_msg = MAKE_SHARED_ROS_IMU;
+    robosense::convert::RSConvertManager::toRosImuMessage(msgPtr, imu_frame_id,
+                                                          imu_msg);
     timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-#if defined(ROS_FOUND)
-    publisher_imu.publish(*imu_msg);
-#elif defined(ROS2_FOUND)
     publisher_imu->publish(*imu_msg);
-#endif // ROS_ROS2_FOUND
     timestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
     if (timestamp_manager_ptr) {
       timestampPtr->channel_id =
@@ -4291,7 +4004,7 @@ private:
                    frame.second);
       }
     }
-    logInfo("AC1 Rgb Work Thread Exit !");
+    RS_SPDLOG_INFO("AC1 Rgb Work Thread Exit !");
   }
 
   void rgbLeftProcessWorkThread() {
@@ -4318,7 +4031,7 @@ private:
                    frame.second);
       }
     }
-    logInfo("AC2 Rgb Left Work Thread Exit !");
+    RS_SPDLOG_INFO("AC2 Rgb Left Work Thread Exit !");
   }
 
   void rgbRightProcessWorkThread() {
@@ -4345,7 +4058,7 @@ private:
                    frame.second);
       }
     }
-    logInfo("AC2 Rgb Right Work Thread Exit !");
+    RS_SPDLOG_INFO("AC2 Rgb Right Work Thread Exit !");
   }
 
   void rgbRectifyProcessWorkThread() {
@@ -4372,7 +4085,7 @@ private:
                            frame.first, frame.second);
       }
     }
-    logInfo("AC1 Rgb Rectify Work Thread Exit !");
+    RS_SPDLOG_INFO("AC1 Rgb Rectify Work Thread Exit !");
   }
 
   void rgbRectifyLeftProcessWorkThread() {
@@ -4400,7 +4113,7 @@ private:
                            frame.first, frame.second);
       }
     }
-    logInfo("AC2 Rgb Rectify Left Work Thread Exit !");
+    RS_SPDLOG_INFO("AC2 Rgb Rectify Left Work Thread Exit !");
   }
 
   void rgbRectifyRightProcessWorkThread() {
@@ -4428,7 +4141,7 @@ private:
                            frame.first, frame.second);
       }
     }
-    logInfo("AC2 Rgb Rectify Right Work Thread Exit !");
+    RS_SPDLOG_INFO("AC2 Rgb Rectify Right Work Thread Exit !");
   }
 
   void jpegProcessWorkThread() {
@@ -4454,7 +4167,7 @@ private:
                     frame.second);
       }
     }
-    logInfo("AC1 Jpeg Work Thread Exit !");
+    RS_SPDLOG_INFO("AC1 Jpeg Work Thread Exit !");
   }
 
   void jpegLeftProcessWorkThread() {
@@ -4481,7 +4194,7 @@ private:
                     frame.second);
       }
     }
-    logInfo("AC2 Jpeg Left Work Thread Exit !");
+    RS_SPDLOG_INFO("AC2 Jpeg Left Work Thread Exit !");
   }
 
   void jpegRightProcessWorkThread() {
@@ -4508,7 +4221,7 @@ private:
                     frame.first, frame.second);
       }
     }
-    logInfo("AC2 Jpeg Right Work Thread Exit !");
+    RS_SPDLOG_INFO("AC2 Jpeg Right Work Thread Exit !");
   }
 
   void jpegRectifyProcessWorkThread() {
@@ -4535,7 +4248,7 @@ private:
                             frame.first, frame.second);
       }
     }
-    logInfo("AC1 Jpeg Rectify Work Thread Exit !");
+    RS_SPDLOG_INFO("AC1 Jpeg Rectify Work Thread Exit !");
   }
 
   void jpegRectifyLeftProcessWorkThread() {
@@ -4563,7 +4276,7 @@ private:
                             frame.first, frame.second);
       }
     }
-    logInfo("AC2 Jpeg Rectify Left Work Thread Exit !");
+    RS_SPDLOG_INFO("AC2 Jpeg Rectify Left Work Thread Exit !");
   }
 
   void jpegRectifyRightProcessWorkThread() {
@@ -4591,7 +4304,7 @@ private:
                             frame.first, frame.second);
       }
     }
-    logInfo("AC2 Jpeg Rectify Right Work Thread Exit !");
+    RS_SPDLOG_INFO("AC2 Jpeg Rectify Right Work Thread Exit !");
   }
 
   void deviceInfoProcessWorkThread() {
@@ -4601,27 +4314,24 @@ private:
         std::lock_guard<std::mutex> lg(current_device_uuid_mtx);
         if (!current_device_info_valid) {
           if (initCameraInfoAndDeviceCalibInfo(current_device_uuid)) {
-            logWarn("Current Device uuid = " + current_device_uuid +
-                    " Not Get Valid Device Info !");
+            RS_SPDLOG_WARN("Current Device uuid = " + current_device_uuid +
+                           " Not Get Valid Device Info !");
             continue;
           }
         }
       }
 
-      // 构造消息
+      // 构造消息&发布
+      ROS_RSACDEVICECALIB msg = current_device_calib_msg;
+      msg.header.frame_id = "/device_calib_info";
 #if defined(ROS_FOUND)
-      robosense_msgs::RsACDeviceCalib msg = current_device_calib_msg;
-      msg.header.frame_id = "/device_calib_info";
       msg.header.stamp = ros::Time::now();
-      publisher_device_calib_info.publish(msg);
 #elif defined(ROS2_FOUND)
-      robosense_msgs::msg::RsACDeviceCalib msg = current_device_calib_msg;
-      msg.header.frame_id = "/device_calib_info";
       msg.header.stamp = this->now();
-      publisher_device_calib_info->publish(msg);
 #endif // ROS_ROS2_FOUND
+      publisher_device_calib_info->publish(msg);
     }
-    logInfo("Device Info Work Thread Exist !");
+    RS_SPDLOG_INFO("Device Info Work Thread Exist !");
   }
 
   int loadCameraCalibInfoFromDevice(const std::string &uuid) {
@@ -4629,8 +4339,8 @@ private:
     bool isSuccess =
         device_manager_ptr->getDeviceInfo(uuid, current_device_info);
     if (isSuccess) {
-      if (parserDeviceCalibInfo(uuid, current_device_info,
-                                current_device_calib_msg)) {
+      if (robosense::calib::RSCalibManager::parserDeviceCalibInfo(
+              uuid, current_device_info, current_device_calib_msg)) {
         return -1;
       } else {
         current_device_info_ready = true;
@@ -4643,17 +4353,10 @@ private:
 
   int initDeviceCalibInfoFromDevice() {
     if (current_device_info_ready) {
-#if defined(ROS_FOUND)
-      publisher_device_calib_info =
-          nh.advertise<robosense_msgs::RsACDeviceCalib>(
-              ac_device_calib_info_topic_name, 3);
-#elif defined(ROS2_FOUND)
-      publisher_device_calib_info =
-          this->create_publisher<robosense_msgs::msg::RsACDeviceCalib>(
-              ac_device_calib_info_topic_name, 3);
-#endif // ROS_ROS2_FOUND
+      publisher_device_calib_info = create_ros_publisher<ROS_RSACDEVICECALIB>(
+          ac_device_calib_info_topic_name, 3);
     } else {
-      logWarn("Can Not Parser Device Calib Info From Device !");
+      RS_SPDLOG_WARN("Can Not Parser Device Calib Info From Device !");
       return -1;
     }
 
@@ -4663,35 +4366,22 @@ private:
   int initCameraInfoFromDevice() {
     if (current_device_info_ready) {
       if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
-#if defined(ROS_FOUND)
         const auto &camerainfo_ptr =
-            parserAC1CameraInfo(current_device_calib_msg);
+            robosense::calib::RSCalibManager::parserAC1CameraInfo(
+                current_device_calib_msg);
         if (camerainfo_ptr) {
           publisher_camera_info =
-              nh.advertise<sensor_msgs::CameraInfo>(camera_info_topic_name, 10);
+              create_ros_publisher<ROS_CAMERAINFO>(camera_info_topic_name, 10);
           camera_info_ptr = camerainfo_ptr;
         } else {
           camera_info_ptr.reset();
-          logWarn("AC1 Parser Image Calibration Failed !");
+          RS_SPDLOG_WARN("AC1 Parser Image Calibration Failed !");
           return -1;
         }
-#elif defined(ROS2_FOUND)
-        const auto &camerainfo_ptr =
-            parserAC1CameraInfo(current_device_calib_msg);
-        if (camerainfo_ptr) {
-          publisher_camera_info =
-              this->create_publisher<sensor_msgs::msg::CameraInfo>(
-                  camera_info_topic_name, 10);
-          camera_info_ptr = camerainfo_ptr;
-        } else {
-          camera_info_ptr.reset();
-          logWarn("AC1 Parser Image Calibration Failed !");
-          return -1;
-        }
-#endif // ROS_ROS2_FOUND
+
         if (enable_rectify && camera_info_ptr) {
-          int ret = parserImageRectifyMap(camera_info_ptr, camera_rectify_map1,
-                                          camera_rectify_map2);
+          int ret = robosense::calib::RSCalibManager::parserImageRectifyMap(
+              camera_info_ptr, camera_rectify_map1, camera_rectify_map2);
           if (ret == 0) {
             camera_rectify_map_valid = true;
           } else {
@@ -4701,78 +4391,56 @@ private:
           }
         }
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
-#if defined(ROS_FOUND)
         const auto &left_right_camera_info_ptr =
-            parserAC2CameraInfo(current_device_calib_msg);
+            robosense::calib::RSCalibManager::parserAC2CameraInfo(
+                current_device_calib_msg);
         if (left_right_camera_info_ptr.first &&
             left_right_camera_info_ptr.second) {
           if (enable_ac2_left_image_send) {
-            publisher_left_camera_info = nh.advertise<sensor_msgs::CameraInfo>(
+            publisher_left_camera_info = create_ros_publisher<ROS_CAMERAINFO>(
                 camera_info_left_topic_name, 10);
             left_camera_info_ptr = left_right_camera_info_ptr.first;
           }
           if (enable_ac2_right_image_send) {
-            publisher_right_camera_info = nh.advertise<sensor_msgs::CameraInfo>(
+            publisher_right_camera_info = create_ros_publisher<ROS_CAMERAINFO>(
                 camera_info_right_topic_name, 10);
             right_camera_info_ptr = left_right_camera_info_ptr.second;
           }
         } else {
           left_camera_info_ptr.reset();
           right_camera_info_ptr.reset();
-          logWarn("AC2 Parser Image Calibration Failed !");
+          RS_SPDLOG_WARN("AC2 Parser Image Calibration Failed !");
           return -2;
         }
-#elif defined(ROS2_FOUND)
-        const auto &left_right_camera_info_ptr =
-            parserAC2CameraInfo(current_device_calib_msg);
-        if (left_right_camera_info_ptr.first &&
-            left_right_camera_info_ptr.second) {
-          if (enable_ac2_left_image_send) {
-            publisher_left_camera_info =
-                this->create_publisher<sensor_msgs::msg::CameraInfo>(
-                    camera_info_left_topic_name, 10);
-            left_camera_info_ptr = left_right_camera_info_ptr.first;
-          }
-          if (enable_ac2_right_image_send) {
-            publisher_right_camera_info =
-                this->create_publisher<sensor_msgs::msg::CameraInfo>(
-                    camera_info_right_topic_name, 10);
-            right_camera_info_ptr = left_right_camera_info_ptr.second;
-          }
-        } else {
-          left_camera_info_ptr.reset();
-          right_camera_info_ptr.reset();
-          logWarn("AC2 Parser Image Calibration Failed !");
-          return -2;
-        }
-#endif // ROS_ROS2_FOUND
+
         if (enable_rectify && left_camera_info_ptr) {
-          int ret = parserImageRectifyMap(left_camera_info_ptr,
-                                          left_camera_rectify_map1,
-                                          left_camera_rectify_map2);
+          int ret = robosense::calib::RSCalibManager::parserImageRectifyMap(
+              left_camera_info_ptr, left_camera_rectify_map1,
+              left_camera_rectify_map2);
           if (ret == 0) {
             left_camera_rectify_map_valid = true;
           } else {
             left_camera_rectify_map_valid = false;
-            logWarn("AC2 Create Left Rectify Map From Image Calibration "
-                    "Failed !");
+            RS_SPDLOG_WARN("AC2 Create Left Rectify Map From Image Calibration "
+                           "Failed !");
           }
         }
         if (enable_rectify && right_camera_info_ptr) {
-          int ret = parserImageRectifyMap(right_camera_info_ptr,
-                                          right_camera_rectify_map1,
-                                          right_camera_rectify_map2);
+          int ret = robosense::calib::RSCalibManager::parserImageRectifyMap(
+              right_camera_info_ptr, right_camera_rectify_map1,
+              right_camera_rectify_map2);
           if (ret == 0) {
             right_camera_rectify_map_valid = true;
           } else {
             right_camera_rectify_map_valid = false;
-            logWarn("AC2 Create Right Rectify Map From Image Calibration "
-                    "Failed !");
+            RS_SPDLOG_WARN(
+                "AC2 Create Right Rectify Map From Image Calibration "
+                "Failed !");
           }
         }
       }
     } else {
-      logWarn("Can Not Parser Camera Info From Device !");
+      RS_SPDLOG_WARN("Can Not Parser Camera Info From Device !");
       return -3;
     }
 
@@ -4780,162 +4448,125 @@ private:
   }
 
   int initDeviceCalibInfoFromFiles() {
-    if (isFileExist(device_calib_file_path)) {
+    if (robosense::calib::RSCalibManager::isFileExist(device_calib_file_path)) {
       if (lidar_type == robosense::lidar::LidarType::RS_AC1 &&
-          checkImageCalibFileIsAC1(device_calib_file_path)) {
-        int ret = parserAC1DeviceCalibInfo(device_calib_file_path,
-                                           current_device_calib_msg);
+          robosense::calib::RSCalibManager::checkImageCalibFileIsAC1(
+              device_calib_file_path)) {
+        int ret = robosense::calib::RSCalibManager::parserAC1DeviceCalibInfo(
+            device_calib_file_path, current_device_calib_msg);
         if (ret != 0) {
-          logWarn("Parser AC1 Device Calib Info From Files: " +
-                  device_calib_file_path + " Failed !");
+          RS_SPDLOG_WARN("Parser AC1 Device Calib Info From Files: " +
+                         device_calib_file_path + " Failed !");
           return -1;
         }
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2 &&
-                 checkImageCalibFileIsAC2(device_calib_file_path)) {
-        int ret = parserAC2DeviceCalibInfo(device_calib_file_path,
-                                           current_device_calib_msg);
+                 robosense::calib::RSCalibManager::checkImageCalibFileIsAC2(
+                     device_calib_file_path)) {
+        int ret = robosense::calib::RSCalibManager::parserAC2DeviceCalibInfo(
+            device_calib_file_path, current_device_calib_msg);
         if (ret != 0) {
-          logWarn("Parser AC2 Device Calib Info From Files: " +
-                  device_calib_file_path + " Failed !");
+          RS_SPDLOG_WARN("Parser AC2 Device Calib Info From Files: " +
+                         device_calib_file_path + " Failed !");
           return -2;
         }
       }
     } else {
-      logWarn("Image Calibration File: " + device_calib_file_path +
-              " Not Exist !");
+      RS_SPDLOG_WARN("Image Calibration File: " + device_calib_file_path +
+                     " Not Exist !");
       return -3;
     }
 
-#if defined(ROS_FOUND)
-    publisher_device_calib_info = nh.advertise<robosense_msgs::RsACDeviceCalib>(
+    publisher_device_calib_info = create_ros_publisher<ROS_RSACDEVICECALIB>(
         ac_device_calib_info_topic_name, 3);
-#elif defined(ROS2_FOUND)
-    publisher_device_calib_info =
-        this->create_publisher<robosense_msgs::msg::RsACDeviceCalib>(
-            ac_device_calib_info_topic_name, 3);
-#endif // ROS_ROS2_FOUND
-    // 更新状态
 
     return 0;
   }
 
   int initCameraInfoFromFiles() {
-    if (isFileExist(device_calib_file_path)) {
+    if (robosense::calib::RSCalibManager::isFileExist(device_calib_file_path)) {
       if (lidar_type == robosense::lidar::LidarType::RS_AC1 &&
-          checkImageCalibFileIsAC1(device_calib_file_path)) {
+          robosense::calib::RSCalibManager::checkImageCalibFileIsAC1(
+              device_calib_file_path)) {
         if (enable_ac1_image_send) {
-#if defined(ROS_FOUND)
           const auto &camerainfo_ptr =
-              parserAC1CameraInfo(device_calib_file_path);
+              robosense::calib::RSCalibManager::parserAC1CameraInfo(
+                  device_calib_file_path);
           if (camerainfo_ptr) {
-            publisher_camera_info = nh.advertise<sensor_msgs::CameraInfo>(
+            publisher_camera_info = create_ros_publisher<ROS_CAMERAINFO>(
                 camera_info_topic_name, 10);
             camera_info_ptr = camerainfo_ptr;
           } else {
             camera_info_ptr.reset();
-            logWarn("AC1 Parser Image Calibration Failed !");
+            RS_SPDLOG_WARN("AC1 Parser Image Calibration Failed !");
             return -1;
           }
-#elif defined(ROS2_FOUND)
-          const auto &camerainfo_ptr =
-              parserAC1CameraInfo(device_calib_file_path);
-          if (camerainfo_ptr) {
-            publisher_camera_info =
-                this->create_publisher<sensor_msgs::msg::CameraInfo>(
-                    camera_info_topic_name, 10);
-            camera_info_ptr = camerainfo_ptr;
-          } else {
-            camera_info_ptr.reset();
-            logWarn("AC1 Parser Image Calibration Failed !");
-            return -1;
-          }
-#endif // ROS_ROS2_FOUND
+
           if (enable_rectify && camera_info_ptr) {
-            int ret = parserImageRectifyMap(
+            int ret = robosense::calib::RSCalibManager::parserImageRectifyMap(
                 camera_info_ptr, camera_rectify_map1, camera_rectify_map2);
             if (ret == 0) {
               camera_rectify_map_valid = true;
             } else {
               camera_rectify_map_valid = false;
-              logWarn("AC1 Create Rectify Map From Image Calibration Failed !");
+              RS_SPDLOG_WARN(
+                  "AC1 Create Rectify Map From Image Calibration Failed !");
             }
           }
         }
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2 &&
-                 checkImageCalibFileIsAC2(device_calib_file_path)) {
-#if defined(ROS_FOUND)
+                 robosense::calib::RSCalibManager::checkImageCalibFileIsAC2(
+                     device_calib_file_path)) {
         const auto &left_right_camera_info_ptr =
-            parserAC2CameraInfo(device_calib_file_path);
+            robosense::calib::RSCalibManager::parserAC2CameraInfo(
+                device_calib_file_path);
         if (left_right_camera_info_ptr.first &&
             left_right_camera_info_ptr.second) {
           if (enable_ac2_left_image_send) {
-            publisher_left_camera_info = nh.advertise<sensor_msgs::CameraInfo>(
+            publisher_left_camera_info = create_ros_publisher<ROS_CAMERAINFO>(
                 camera_info_left_topic_name, 10);
             left_camera_info_ptr = left_right_camera_info_ptr.first;
           }
           if (enable_ac2_right_image_send) {
-            publisher_right_camera_info = nh.advertise<sensor_msgs::CameraInfo>(
+            publisher_right_camera_info = create_ros_publisher<ROS_CAMERAINFO>(
                 camera_info_right_topic_name, 10);
             right_camera_info_ptr = left_right_camera_info_ptr.second;
           }
         } else {
           left_camera_info_ptr.reset();
           right_camera_info_ptr.reset();
-          logWarn("AC2 Parser Image Calibration Failed !");
+          RS_SPDLOG_WARN("AC2 Parser Image Calibration Failed !");
           return -2;
         }
-#elif defined(ROS2_FOUND)
-        const auto &left_right_camera_info_ptr =
-            parserAC2CameraInfo(device_calib_file_path);
-        if (left_right_camera_info_ptr.first &&
-            left_right_camera_info_ptr.second) {
-          if (enable_ac2_left_image_send) {
-            publisher_left_camera_info =
-                this->create_publisher<sensor_msgs::msg::CameraInfo>(
-                    camera_info_left_topic_name, 10);
-            left_camera_info_ptr = left_right_camera_info_ptr.first;
-          }
-          if (enable_ac2_right_image_send) {
-            publisher_right_camera_info =
-                this->create_publisher<sensor_msgs::msg::CameraInfo>(
-                    camera_info_right_topic_name, 10);
-            right_camera_info_ptr = left_right_camera_info_ptr.second;
-          }
-        } else {
-          left_camera_info_ptr.reset();
-          right_camera_info_ptr.reset();
-          logWarn("AC2 Parser Image Calibration Failed !");
-          return -2;
-        }
-#endif // ROS_ROS2_FOUND
+
         if (enable_rectify && left_camera_info_ptr) {
-          int ret = parserImageRectifyMap(left_camera_info_ptr,
-                                          left_camera_rectify_map1,
-                                          left_camera_rectify_map2);
+          int ret = robosense::calib::RSCalibManager::parserImageRectifyMap(
+              left_camera_info_ptr, left_camera_rectify_map1,
+              left_camera_rectify_map2);
           if (ret == 0) {
             left_camera_rectify_map_valid = true;
           } else {
             left_camera_rectify_map_valid = false;
-            logWarn("AC2 Create Left Rectify Map From Image Calibration "
-                    "Failed !");
+            RS_SPDLOG_WARN("AC2 Create Left Rectify Map From Image Calibration "
+                           "Failed !");
           }
         }
         if (enable_rectify && right_camera_info_ptr) {
-          int ret = parserImageRectifyMap(right_camera_info_ptr,
-                                          right_camera_rectify_map1,
-                                          right_camera_rectify_map2);
+          int ret = robosense::calib::RSCalibManager::parserImageRectifyMap(
+              right_camera_info_ptr, right_camera_rectify_map1,
+              right_camera_rectify_map2);
           if (ret == 0) {
             right_camera_rectify_map_valid = true;
           } else {
             right_camera_rectify_map_valid = false;
-            logWarn("AC2 Create Right Rectify Map From Image Calibration "
-                    "Failed !");
+            RS_SPDLOG_WARN(
+                "AC2 Create Right Rectify Map From Image Calibration "
+                "Failed !");
           }
         }
       }
     } else {
-      logWarn("Image Calibration File: " + device_calib_file_path +
-              " Not Exist !");
+      RS_SPDLOG_WARN("Image Calibration File: " + device_calib_file_path +
+                     " Not Exist !");
       return -3;
     }
 
@@ -4956,12 +4587,12 @@ private:
       isSuccess = (ret1 == 0) && (ret2 == 0);
 
       if (isSuccess) {
-        logInfo("Device priority(1): Load Device Calib Info From Device "
-                "Successed !");
+        RS_SPDLOG_INFO("Device priority(1): Load Device Calib Info From Device "
+                       "Successed !");
       } else {
-        logWarn("Device priority(1): ret1 = " + std::to_string(ret1) +
-                ", ret2 = " + std::to_string(ret2) +
-                ": Load Device Calib Info From Device Failed !");
+        RS_SPDLOG_WARN("Device priority(1): ret1 = " + std::to_string(ret1) +
+                       ", ret2 = " + std::to_string(ret2) +
+                       ": Load Device Calib Info From Device Failed !");
       }
 
       if (!isSuccess) {
@@ -4972,12 +4603,13 @@ private:
         isSuccess = (ret1 == 0) && (ret2 == 0);
 
         if (isSuccess) {
-          logInfo("Device priority(2): Load Device Calib Info From Files "
-                  "Successed !");
+          RS_SPDLOG_INFO(
+              "Device priority(2): Load Device Calib Info From Files "
+              "Successed !");
         } else {
-          logWarn("Device priority(2): ret1 = " + std::to_string(ret1) +
-                  ", ret2 = " + std::to_string(ret2) +
-                  ": Load Device Calib Info From Files Failed !");
+          RS_SPDLOG_WARN("Device priority(2): ret1 = " + std::to_string(ret1) +
+                         ", ret2 = " + std::to_string(ret2) +
+                         ": Load Device Calib Info From Files Failed !");
         }
       }
     } else {
@@ -4988,12 +4620,12 @@ private:
       isSuccess = (ret1 == 0) && (ret2 == 0);
 
       if (isSuccess) {
-        logInfo("Files priority(1): Load Device Calib Info From Files "
-                "Successed !");
+        RS_SPDLOG_INFO("Files priority(1): Load Device Calib Info From Files "
+                       "Successed !");
       } else {
-        logWarn("Files priority(1): ret1 = " + std::to_string(ret1) +
-                ", ret2 = " + std::to_string(ret2) +
-                ": Load Device Calib Info From Files Failed !");
+        RS_SPDLOG_WARN("Files priority(1): ret1 = " + std::to_string(ret1) +
+                       ", ret2 = " + std::to_string(ret2) +
+                       ": Load Device Calib Info From Files Failed !");
       }
 
       if (!isSuccess) {
@@ -5004,12 +4636,13 @@ private:
         isSuccess = (ret1 == 0) && (ret2 == 0);
 
         if (isSuccess) {
-          logInfo("Files priority(2): Load Device Calib Info From Device "
-                  "Successed ! ");
+          RS_SPDLOG_INFO(
+              "Files priority(2): Load Device Calib Info From Device "
+              "Successed ! ");
         } else {
-          logWarn("Files priority(2): ret1 = " + std::to_string(ret1) +
-                  ", ret2 = " + std::to_string(ret2) +
-                  ": Load Device Calib Info From Device Failed !");
+          RS_SPDLOG_WARN("Files priority(2): ret1 = " + std::to_string(ret1) +
+                         ", ret2 = " + std::to_string(ret2) +
+                         ": Load Device Calib Info From Device Failed !");
         }
       }
     }
@@ -5019,1059 +4652,6 @@ private:
 
     return (isSuccess ? 0 : -1);
   }
-
-  bool isFileExist(const std::string &filePath) {
-    int ret = access(filePath.c_str(), 0);
-
-    if (ret != 0) {
-      return false;
-    }
-
-    return true;
-  }
-
-  bool checkImageCalibFileIsAC1(const std::string &filePath) {
-    YAML::Node calibNode;
-    try {
-      calibNode = YAML::LoadFile(filePath);
-    } catch (...) {
-      logError("Load Yaml File Failed: filePath = " + filePath);
-      return false;
-    }
-
-    if (!calibNode["DEVICE_ID"].IsDefined() ||
-        !calibNode["Sensor"].IsDefined()) {
-      logError("Load Yaml File: " + filePath +
-               " Successed, But Not Include \"DEVICE_ID\" or/and \"Sensor\" "
-               "Node !");
-      return false;
-    }
-
-    YAML::Node sensorNode = calibNode["Sensor"];
-    if (sensorNode["Camera"].IsDefined() &&
-        !sensorNode["Camera_R"].IsDefined() && sensorNode["IMU"].IsDefined()) {
-      return true;
-    }
-
-    logError("Load Yaml File: " + filePath +
-             " Successed, But Not Include \"Camera\" or/and \"IMU\" Node | or "
-             "Include \"Camera_R\"!");
-
-    return false;
-  }
-
-  bool checkImageCalibFileIsAC2(const std::string &filePath) {
-    YAML::Node calibNode;
-    try {
-      calibNode = YAML::LoadFile(filePath);
-    } catch (...) {
-      logError("Load Yaml File Failed: filePath = " + filePath);
-      return false;
-    }
-
-    if (!calibNode["DEVICE_ID"].IsDefined() ||
-        !calibNode["Sensor"].IsDefined()) {
-      logError("Load Yaml File: " + filePath +
-               " Successed, But Not Include \"DEVICE_ID\" or/and \"Sensor\" "
-               "Node !");
-      return false;
-    }
-
-    YAML::Node sensorNode = calibNode["Sensor"];
-    if (sensorNode["Camera"].IsDefined() &&
-        sensorNode["Camera_R"].IsDefined() && sensorNode["IMU"].IsDefined()) {
-      return true;
-    }
-
-    logError("Load Yaml File: " + filePath +
-             " Successed, But Not Include \"Camera\" Or/And \"Camera_R\" "
-             "or/and \"IMU\" Node !");
-
-    return false;
-  }
-
-  std::string toLowerCase(const std::string &input) {
-    std::string result = input;
-    std::transform(result.begin(), result.end(), result.begin(), ::tolower);
-    return result;
-  }
-
-#if defined(ROS_FOUND)
-  int parserAC1DeviceCalibInfo(
-      const std::string &filePath,
-      robosense_msgs::RsACDeviceCalib &device_calib_msg)
-#elif defined(ROS2_FOUND)
-  int parserAC1DeviceCalibInfo(
-      const std::string &filePath,
-      robosense_msgs::msg::RsACDeviceCalib &device_calib_msg)
-#endif // ROS_ROS2_FOUND
-  {
-    YAML::Node calibNode;
-    try {
-      calibNode = YAML::LoadFile(filePath);
-    } catch (...) {
-      logError("Load Yaml File Failed: filePath = " + filePath);
-      return -1;
-    }
-
-    if (!calibNode["DEVICE_ID"].IsDefined() ||
-        !calibNode["Sensor"].IsDefined()) {
-      logError("Load Yaml File: " + filePath +
-               " Successed, But Not Include \"DEVICE_ID\" or/and \"Sensor\" "
-               "Node !");
-      return -2;
-    }
-
-    YAML::Node sensorNode = calibNode["Sensor"];
-    if (!sensorNode["Camera"].IsDefined() || !sensorNode["IMU"].IsDefined()) {
-      logError("Load Yaml File: " + filePath +
-               " Successed, But Not Include \"Camera\" Or/And \"IMU\" Node !");
-      return -3;
-    }
-
-    // DEVICE_ID
-    device_calib_msg.device_id = calibNode["DEVICE_ID"].as<std::string>();
-
-    {
-      // CAMERA
-      const YAML::Node &cameraNode = sensorNode["Camera"];
-      const std::vector<double> &int_matrix =
-          cameraNode["intrinsic"]["int_matrix"].as<std::vector<double>>();
-      const std::vector<double> &dist_coeff =
-          cameraNode["intrinsic"]["dist_coeff"].as<std::vector<double>>();
-      const YAML::Node &extrinsic_trans =
-          cameraNode["extrinsic"]["translation"];
-      const YAML::Node &extrinsic_quat = cameraNode["extrinsic"]["quaternion"];
-      const std::vector<int32_t> &image_size =
-          cameraNode["intrinsic"]["image_size"].as<std::vector<int32_t>>();
-
-      double fx = int_matrix[0]; // fx
-      double fy = int_matrix[4]; // fy
-      double cx = int_matrix[2]; // cx
-      double cy = int_matrix[5]; // cy
-
-      device_calib_msg.camcx = cx;
-      device_calib_msg.camcy = cy;
-      device_calib_msg.camdistcoeff1 = dist_coeff[0];
-      device_calib_msg.camdistcoeff2 = dist_coeff[1];
-      device_calib_msg.camdistcoeff3 = dist_coeff[2];
-      device_calib_msg.camdistcoeff4 = dist_coeff[3];
-      device_calib_msg.camdistcoeff5 = dist_coeff[4];
-      device_calib_msg.camdistcoeff6 = dist_coeff[5];
-      device_calib_msg.camdistcoeff7 = dist_coeff[6];
-      device_calib_msg.camdistcoeff8 = dist_coeff[7];
-      device_calib_msg.camfx = fx;
-      device_calib_msg.camfy = fy;
-
-      // CAMERA -> LIDAR
-      device_calib_msg.camtolidarqw = extrinsic_quat["w"].as<double>();
-      device_calib_msg.camtolidarqx = extrinsic_quat["x"].as<double>();
-      device_calib_msg.camtolidarqy = extrinsic_quat["y"].as<double>();
-      device_calib_msg.camtolidarqz = extrinsic_quat["z"].as<double>();
-      device_calib_msg.camtolidartx = extrinsic_trans["x"].as<double>();
-      device_calib_msg.camtolidarty = extrinsic_trans["y"].as<double>();
-      device_calib_msg.camtolidartz = extrinsic_trans["z"].as<double>();
-
-      // 左相机更新即可
-      device_calib_msg.imagewidth = image_size[0];
-      device_calib_msg.imageheight = image_size[1];
-    }
-
-    // 无须填写
-    // CAMERA_R
-    // CAMERA_R -> CAMERA
-
-    {
-      // IMU -> LIDAR
-      const YAML::Node &imuNode = sensorNode["IMU"];
-      const YAML::Node &extrinsic_trans = imuNode["extrinsic"]["translation"];
-      const YAML::Node &extrinsic_quat = imuNode["extrinsic"]["quaternion"];
-
-      device_calib_msg.imutolidarqw = extrinsic_quat["w"].as<double>();
-      device_calib_msg.imutolidarqx = extrinsic_quat["x"].as<double>();
-      device_calib_msg.imutolidarqy = extrinsic_quat["y"].as<double>();
-      device_calib_msg.imutolidarqz = extrinsic_quat["z"].as<double>();
-      device_calib_msg.imutolidartx = extrinsic_trans["x"].as<double>();
-      device_calib_msg.imutolidarty = extrinsic_trans["y"].as<double>();
-      device_calib_msg.imutolidartz = extrinsic_trans["z"].as<double>();
-    }
-
-    return 0;
-  }
-
-#if defined(ROS_FOUND)
-  int parserAC2DeviceCalibInfo(
-      const std::string &filePath,
-      robosense_msgs::RsACDeviceCalib &device_calib_msg)
-#elif defined(ROS2_FOUND)
-  int parserAC2DeviceCalibInfo(
-      const std::string &filePath,
-      robosense_msgs::msg::RsACDeviceCalib &device_calib_msg)
-#endif // ROS_ROS2_FOUND
-  {
-    YAML::Node calibNode;
-    try {
-      calibNode = YAML::LoadFile(filePath);
-    } catch (...) {
-      logError("Load Yaml File Failed: filePath = " + filePath);
-      return -1;
-    }
-
-    if (!calibNode["DEVICE_ID"].IsDefined() ||
-        !calibNode["Sensor"].IsDefined()) {
-      logError("Load Yaml File: " + filePath +
-               " Successed, But Not Include \"DEVICE_ID\" or/and \"Sensor\" "
-               "Node !");
-      return -2;
-    }
-
-    YAML::Node sensorNode = calibNode["Sensor"];
-    if (!sensorNode["Camera"].IsDefined() ||
-        !sensorNode["Camera_R"].IsDefined() || !sensorNode["IMU"].IsDefined()) {
-      logError("Load Yaml File: " + filePath +
-               " Successed, But Not Include \"Camera\" Or/And \"Camera_R\" "
-               "Or/And \"IMU\" Node !");
-      return -3;
-    }
-
-    // DEVICE_ID
-    device_calib_msg.device_id = calibNode["DEVICE_ID"].as<std::string>();
-
-    {
-      // CAMERA
-      const YAML::Node &cameraNode = sensorNode["Camera"];
-      const std::vector<double> &int_matrix =
-          cameraNode["intrinsic"]["int_matrix"].as<std::vector<double>>();
-      const std::vector<double> &dist_coeff =
-          cameraNode["intrinsic"]["dist_coeff"].as<std::vector<double>>();
-      const YAML::Node &extrinsic_trans =
-          cameraNode["extrinsic"]["translation"];
-      const YAML::Node &extrinsic_quat = cameraNode["extrinsic"]["quaternion"];
-      const std::vector<int32_t> &image_size =
-          cameraNode["intrinsic"]["image_size"].as<std::vector<int32_t>>();
-
-      double fx = int_matrix[0]; // fx
-      double fy = int_matrix[4]; // fy
-      double cx = int_matrix[2]; // cx
-      double cy = int_matrix[5]; // cy
-
-      device_calib_msg.camcx = cx;
-      device_calib_msg.camcy = cy;
-      device_calib_msg.camdistcoeff1 = dist_coeff[0];
-      device_calib_msg.camdistcoeff2 = dist_coeff[1];
-      device_calib_msg.camdistcoeff3 = dist_coeff[2];
-      device_calib_msg.camdistcoeff4 = dist_coeff[3];
-      device_calib_msg.camdistcoeff5 = dist_coeff[4];
-      device_calib_msg.camdistcoeff6 = dist_coeff[5];
-      device_calib_msg.camdistcoeff7 = dist_coeff[6];
-      device_calib_msg.camdistcoeff8 = dist_coeff[7];
-      device_calib_msg.camfx = fx;
-      device_calib_msg.camfy = fy;
-
-      // CAMERA -> LIDAR
-      device_calib_msg.camtolidarqw = extrinsic_quat["w"].as<double>();
-      device_calib_msg.camtolidarqx = extrinsic_quat["x"].as<double>();
-      device_calib_msg.camtolidarqy = extrinsic_quat["y"].as<double>();
-      device_calib_msg.camtolidarqz = extrinsic_quat["z"].as<double>();
-      device_calib_msg.camtolidartx = extrinsic_trans["x"].as<double>();
-      device_calib_msg.camtolidarty = extrinsic_trans["y"].as<double>();
-      device_calib_msg.camtolidartz = extrinsic_trans["z"].as<double>();
-
-      // 左相机更新即可
-      device_calib_msg.imagewidth = image_size[0];
-      device_calib_msg.imageheight = image_size[1];
-    }
-
-    {
-      const YAML::Node &cameraNode = sensorNode["Camera_R"];
-      const std::vector<double> &int_matrix =
-          cameraNode["intrinsic"]["int_matrix"].as<std::vector<double>>();
-      const std::vector<double> &dist_coeff =
-          cameraNode["intrinsic"]["dist_coeff"].as<std::vector<double>>();
-      const YAML::Node &extrinsic_trans =
-          cameraNode["extrinsic"]["translation"];
-      const YAML::Node &extrinsic_quat = cameraNode["extrinsic"]["quaternion"];
-
-      double fx = int_matrix[0]; // fx
-      double fy = int_matrix[4]; // fy
-      double cx = int_matrix[2]; // cx
-      double cy = int_matrix[5]; // cy
-
-      // CAMERA_R
-      device_calib_msg.camrcx = cx;
-      device_calib_msg.camrcy = cy;
-      device_calib_msg.camrdistcoeff1 = dist_coeff[0];
-      device_calib_msg.camrdistcoeff2 = dist_coeff[1];
-      device_calib_msg.camrdistcoeff3 = dist_coeff[2];
-      device_calib_msg.camrdistcoeff4 = dist_coeff[3];
-      device_calib_msg.camrdistcoeff5 = dist_coeff[4];
-      device_calib_msg.camrdistcoeff6 = dist_coeff[5];
-      device_calib_msg.camrdistcoeff7 = dist_coeff[6];
-      device_calib_msg.camrdistcoeff8 = dist_coeff[7];
-      device_calib_msg.camrfx = fx;
-      device_calib_msg.camrfy = fy;
-
-      // CAMERA_R -> CAMERA
-      device_calib_msg.camrtocamqw = extrinsic_quat["w"].as<double>();
-      device_calib_msg.camrtocamqx = extrinsic_quat["x"].as<double>();
-      device_calib_msg.camrtocamqy = extrinsic_quat["y"].as<double>();
-      device_calib_msg.camrtocamqz = extrinsic_quat["z"].as<double>();
-      device_calib_msg.camrtocamtx = extrinsic_trans["x"].as<double>();
-      device_calib_msg.camrtocamty = extrinsic_trans["y"].as<double>();
-      device_calib_msg.camrtocamtz = extrinsic_trans["z"].as<double>();
-    }
-
-    {
-      // IMU -> LIDAR
-      const YAML::Node &imuNode = sensorNode["IMU"];
-      const YAML::Node &extrinsic_trans = imuNode["extrinsic"]["translation"];
-      const YAML::Node &extrinsic_quat = imuNode["extrinsic"]["quaternion"];
-
-      device_calib_msg.imutolidarqw = extrinsic_quat["w"].as<double>();
-      device_calib_msg.imutolidarqx = extrinsic_quat["x"].as<double>();
-      device_calib_msg.imutolidarqy = extrinsic_quat["y"].as<double>();
-      device_calib_msg.imutolidarqz = extrinsic_quat["z"].as<double>();
-      device_calib_msg.imutolidartx = extrinsic_trans["x"].as<double>();
-      device_calib_msg.imutolidarty = extrinsic_trans["y"].as<double>();
-      device_calib_msg.imutolidartz = extrinsic_trans["z"].as<double>();
-    }
-
-    return 0;
-  }
-
-#if defined(ROS_FOUND)
-  int parserDeviceCalibInfo(const std::string &uuid,
-                            const robosense::lidar::DeviceInfo &device_info,
-                            robosense_msgs::RsACDeviceCalib &device_calib_msg)
-#elif defined(ROS2_FOUND)
-  int parserDeviceCalibInfo(
-      const std::string &uuid, const robosense::lidar::DeviceInfo &device_info,
-      robosense_msgs::msg::RsACDeviceCalib &device_calib_msg)
-#endif // ROS_ROS2_FOUND
-  {
-    // 分别对应AC1/AC2的标定参数
-    auto calib_params = device_info.calib_params;
-    const auto &calib_params_str = device_info.calib_params_str;
-    if (calib_params.empty() && calib_params_str.empty()) {
-      logError("Parser Device Calib Info Failed: calib_params and "
-               "calib_params_str is empty !");
-      return -1;
-    }
-
-    if (!calib_params_str.empty()) {
-      // AC1 Case1:
-      YAML::Node calib_node;
-      try {
-        calib_node = YAML::Load(calib_params_str);
-      } catch (...) {
-        logError(
-            "Calib Params Convert To Yaml Node Failed: calib_params_str = " +
-            calib_params_str);
-        return -2;
-      }
-      // std::cout << "calib_node = " << calib_node << std::endl;
-      for (auto iter = calib_node.begin(); iter != calib_node.end(); ++iter) {
-        const std::string &key = iter->first.as<std::string>();
-        const std::string &key2 = toLowerCase(key);
-        const double value = calib_node[key].as<double>();
-        calib_params.insert({key2, value});
-      }
-      // 兼容旧版数据
-      if (device_info.device_id.empty()) {
-        device_calib_msg.device_id = toLowerCase(uuid);
-      }
-      if (calib_params.find("imagewidth") == calib_params.end()) {
-        calib_params.insert({"imagewidth", image_width_ac1});
-      }
-      if (calib_params.find("imageheight") == calib_params.end()) {
-        calib_params.insert({"imageheight", image_height_ac1});
-      }
-    }
-    if (!device_info.device_id.empty()) {
-      device_calib_msg.device_id = device_info.device_id;
-    }
-
-    // 标定参数
-    for (auto iterMap = calib_params.begin(); iterMap != calib_params.end();
-         ++iterMap) {
-      const std::string &key = toLowerCase(iterMap->first);
-      const double value = iterMap->second;
-      if (key == "imagewidth") {
-        device_calib_msg.imagewidth = value;
-      } else if (key == "imageheight") {
-        device_calib_msg.imageheight = value;
-      } else if (key == "camcx") {
-        device_calib_msg.camcx = value;
-      } else if (key == "camcy") {
-        device_calib_msg.camcy = value;
-      } else if (key == "camdistcoeff1") {
-        device_calib_msg.camdistcoeff1 = value;
-      } else if (key == "camdistcoeff2") {
-        device_calib_msg.camdistcoeff2 = value;
-      } else if (key == "camdistcoeff3") {
-        device_calib_msg.camdistcoeff3 = value;
-      } else if (key == "camdistcoeff4") {
-        device_calib_msg.camdistcoeff4 = value;
-      } else if (key == "camdistcoeff5") {
-        device_calib_msg.camdistcoeff5 = value;
-      } else if (key == "camdistcoeff6") {
-        device_calib_msg.camdistcoeff6 = value;
-      } else if (key == "camdistcoeff7") {
-        device_calib_msg.camdistcoeff7 = value;
-      } else if (key == "camdistcoeff8") {
-        device_calib_msg.camdistcoeff8 = value;
-      } else if (key == "camfx") {
-        device_calib_msg.camfx = value;
-      } else if (key == "camfy") {
-        device_calib_msg.camfy = value;
-      } else if (key == "camrcx") {
-        device_calib_msg.camrcx = value;
-      } else if (key == "camrcy") {
-        device_calib_msg.camrcy = value;
-      } else if (key == "camrdistcoeff1") {
-        device_calib_msg.camrdistcoeff1 = value;
-      } else if (key == "camrdistcoeff2") {
-        device_calib_msg.camrdistcoeff2 = value;
-      } else if (key == "camrdistcoeff3") {
-        device_calib_msg.camrdistcoeff3 = value;
-      } else if (key == "camrdistcoeff4") {
-        device_calib_msg.camrdistcoeff4 = value;
-      } else if (key == "camrdistcoeff5") {
-        device_calib_msg.camrdistcoeff5 = value;
-      } else if (key == "camrdistcoeff6") {
-        device_calib_msg.camrdistcoeff6 = value;
-      } else if (key == "camrdistcoeff7") {
-        device_calib_msg.camrdistcoeff7 = value;
-      } else if (key == "camrdistcoeff8") {
-        device_calib_msg.camrdistcoeff8 = value;
-      } else if (key == "camrfx") {
-        device_calib_msg.camrfx = value;
-      } else if (key == "camrfy") {
-        device_calib_msg.camrfy = value;
-      } else if (key == "camrtocamqw") {
-        device_calib_msg.camrtocamqw = value;
-      } else if (key == "camrtocamqx") {
-        device_calib_msg.camrtocamqx = value;
-      } else if (key == "camrtocamqy") {
-        device_calib_msg.camrtocamqy = value;
-      } else if (key == "camrtocamqz") {
-        device_calib_msg.camrtocamqz = value;
-      } else if (key == "camrtocamtx") {
-        device_calib_msg.camrtocamtx = value;
-      } else if (key == "camrtocamty") {
-        device_calib_msg.camrtocamty = value;
-      } else if (key == "camrtocamtz") {
-        device_calib_msg.camrtocamtz = value;
-      } else if (key == "camtolidarqw") {
-        device_calib_msg.camtolidarqw = value;
-      } else if (key == "camtolidarqx") {
-        device_calib_msg.camtolidarqx = value;
-      } else if (key == "camtolidarqy") {
-        device_calib_msg.camtolidarqy = value;
-      } else if (key == "camtolidarqz") {
-        device_calib_msg.camtolidarqz = value;
-      } else if (key == "camtolidartx") {
-        device_calib_msg.camtolidartx = value;
-      } else if (key == "camtolidarty") {
-        device_calib_msg.camtolidarty = value;
-      } else if (key == "camtolidartz") {
-        device_calib_msg.camtolidartz = value;
-      } else if (key == "imutolidarqw") {
-        device_calib_msg.imutolidarqw = value;
-      } else if (key == "imutolidarqx") {
-        device_calib_msg.imutolidarqx = value;
-      } else if (key == "imutolidarqy") {
-        device_calib_msg.imutolidarqy = value;
-      } else if (key == "imutolidarqz") {
-        device_calib_msg.imutolidarqz = value;
-      } else if (key == "imutolidartx") {
-        device_calib_msg.imutolidartx = value;
-      } else if (key == "imutolidarty") {
-        device_calib_msg.imutolidarty = value;
-      } else if (key == "imutolidartz") {
-        device_calib_msg.imutolidartz = value;
-      } else {
-        logWarn("Not Support key = " + key);
-        continue;
-      }
-      logInfo("key = " + key + ", value = " + std::to_string(iterMap->second));
-    }
-
-    return 0;
-  }
-
-#if defined(ROS_FOUND)
-  sensor_msgs::CameraInfo::Ptr
-  parserAC1CameraInfo(const std::string &filePath) {
-    sensor_msgs::CameraInfo::Ptr camera_info_ptr;
-    YAML::Node calibNode;
-    try {
-      calibNode = YAML::LoadFile(filePath);
-    } catch (...) {
-      logError("Load Yaml File Failed: filePath = " + filePath);
-      return nullptr;
-    }
-
-    if (!calibNode["DEVICE_ID"].IsDefined() ||
-        !calibNode["Sensor"].IsDefined()) {
-      logError("Load Yaml File: " + filePath +
-               " Successed, But Not Include \"DEVICE_ID\" or/and \"Sensor\" "
-               "Node !");
-      return nullptr;
-    }
-
-    YAML::Node sensorNode = calibNode["Sensor"];
-    if (!sensorNode["Camera"].IsDefined()) {
-      logError("Load Yaml File: " + filePath +
-               " Successed, But Not Include \"Camera\" Node !");
-      return nullptr;
-    }
-
-    camera_info_ptr = parserCameraInfo(sensorNode["Camera"]);
-
-    return camera_info_ptr;
-  }
-
-  std::pair<sensor_msgs::CameraInfo::Ptr, sensor_msgs::CameraInfo::Ptr>
-  parserAC2CameraInfo(const std::string &filePath) {
-    std::pair<sensor_msgs::CameraInfo::Ptr, sensor_msgs::CameraInfo::Ptr>
-        left_right_camera_info_ptr;
-
-    YAML::Node calibNode;
-    try {
-      calibNode = YAML::LoadFile(filePath);
-    } catch (...) {
-      logError("Load Yaml File Failed: filePath = " + filePath);
-      return {nullptr, nullptr};
-    }
-
-    if (!calibNode["DEVICE_ID"].IsDefined() ||
-        !calibNode["Sensor"].IsDefined()) {
-      logError("Load Yaml File: " + filePath +
-               " Successed, But Not Include \"DEVICE_ID\" or/and \"Sensor\" "
-               "Node !");
-      return {nullptr, nullptr};
-    }
-
-    YAML::Node sensorNode = calibNode["Sensor"];
-    if (!(sensorNode["Camera"].IsDefined() &&
-          sensorNode["Camera_R"].IsDefined())) {
-      logError("Load Yaml File: " + filePath +
-               " Successed, But Not Include \"Camera\" Or/And "
-               "\"Camera_R\" Node !");
-      return {nullptr, nullptr};
-    }
-
-    left_right_camera_info_ptr.first = parserCameraInfo(sensorNode["Camera"]);
-    left_right_camera_info_ptr.second =
-        parserCameraInfo(sensorNode["Camera_R"]);
-
-    return left_right_camera_info_ptr;
-  }
-
-  sensor_msgs::CameraInfo::Ptr parserCameraInfo(const YAML::Node &calibNode) {
-    sensor_msgs::CameraInfo::Ptr camera_info_ptr(new sensor_msgs::CameraInfo());
-    auto &cam_info = *camera_info_ptr;
-    cam_info.distortion_model = "rational_polynomial";
-    cam_info.binning_x = 0;
-    cam_info.binning_y = 0;
-
-    if (calibNode["intrinsic"]) {
-      YAML::Node intrinsic_node = calibNode["intrinsic"];
-      if (intrinsic_node["int_matrix"]) {
-        std::vector<double> int_matrix =
-            intrinsic_node["int_matrix"].as<std::vector<double>>();
-        double fx = int_matrix[0]; // fx
-        double fy = int_matrix[4]; // fy
-        double cx = int_matrix[2]; // cx
-        double cy = int_matrix[5]; // cy
-        cam_info.K = {int_matrix[0], int_matrix[1], int_matrix[2],
-                      int_matrix[3], int_matrix[4], int_matrix[5],
-                      int_matrix[6], int_matrix[7], int_matrix[8]};
-        cam_info.P = {int_matrix[0], int_matrix[1], int_matrix[2], 0.0,
-                      int_matrix[3], int_matrix[4], int_matrix[5], 0.0,
-                      int_matrix[6], int_matrix[7], int_matrix[8], 1.0};
-      }
-      if (intrinsic_node["dist_coeff"]) {
-        std::vector<double> dist_coeff =
-            intrinsic_node["dist_coeff"].as<std::vector<double>>();
-        for (int i = 0; i < 8; i++) {
-          // std::cout << " " << dist_coeff[i];
-          cam_info.D.push_back(dist_coeff[i]);
-        }
-      }
-      if (intrinsic_node["image_size"]) {
-        std::vector<int> image_size =
-            intrinsic_node["image_size"].as<std::vector<int>>();
-        cam_info.width = image_size[0];
-        cam_info.height = image_size[1];
-        cam_info.roi.x_offset = 0;
-        cam_info.roi.y_offset = 0;
-        cam_info.roi.width = image_size[0];
-        cam_info.roi.height = image_size[1];
-      }
-    }
-
-    return camera_info_ptr;
-  }
-
-  int parserImageRectifyMap(const sensor_msgs::CameraInfo::Ptr &camera_info_ptr,
-                            cv::Mat &map1, cv::Mat &map2) {
-    if (camera_info_ptr) {
-      cv::Mat cameraMatrix =
-          (cv::Mat_<double>(3, 3) << camera_info_ptr->K[0],
-           camera_info_ptr->K[1], camera_info_ptr->K[2], camera_info_ptr->K[3],
-           camera_info_ptr->K[4], camera_info_ptr->K[5], camera_info_ptr->K[6],
-           camera_info_ptr->K[7], camera_info_ptr->K[8]);
-      cv::Mat distCoeffsMat =
-          (cv::Mat_<double>(1, 8) << camera_info_ptr->D[0],
-           camera_info_ptr->D[1], camera_info_ptr->D[2], camera_info_ptr->D[3],
-           camera_info_ptr->D[4], camera_info_ptr->D[5], camera_info_ptr->D[6],
-           camera_info_ptr->D[7]);
-
-      cv::initUndistortRectifyMap(
-          cameraMatrix, distCoeffsMat, cv::Mat(), cameraMatrix,
-          cv::Size(camera_info_ptr->width, camera_info_ptr->height), CV_16SC2,
-          map1, map2);
-    } else {
-      return -1;
-    }
-
-    return 0;
-  }
-
-  sensor_msgs::CameraInfo::Ptr
-  parserAC1CameraInfo(const robosense_msgs::RsACDeviceCalib &deviceInfo) {
-    sensor_msgs::CameraInfo::Ptr camera_info_ptr(new sensor_msgs::CameraInfo());
-    auto &cam_info = *camera_info_ptr;
-    cam_info.distortion_model = "rational_polynomial";
-    cam_info.binning_x = 0;
-    cam_info.binning_y = 0;
-
-    cam_info.K = {deviceInfo.camfx,
-                  0,
-                  deviceInfo.camcx,
-                  0,
-                  deviceInfo.camfy,
-                  deviceInfo.camcy,
-                  0,
-                  0,
-                  1};
-    cam_info.P = {deviceInfo.camfx,
-                  0,
-                  deviceInfo.camcx,
-                  0,
-                  0,
-                  deviceInfo.camfy,
-                  deviceInfo.camcy,
-                  0,
-                  0,
-                  0,
-                  0,
-                  1};
-    cam_info.D = {deviceInfo.camdistcoeff1, deviceInfo.camdistcoeff2,
-                  deviceInfo.camdistcoeff3, deviceInfo.camdistcoeff4,
-                  deviceInfo.camdistcoeff5, deviceInfo.camdistcoeff6,
-                  deviceInfo.camdistcoeff7, deviceInfo.camdistcoeff8};
-
-    cam_info.width = deviceInfo.imagewidth;
-    cam_info.height = deviceInfo.imageheight;
-    cam_info.roi.x_offset = 0;
-    cam_info.roi.y_offset = 0;
-    cam_info.roi.width = cam_info.width;
-    cam_info.roi.height = cam_info.height;
-
-    return camera_info_ptr;
-  }
-
-  std::pair<sensor_msgs::CameraInfo::Ptr, sensor_msgs::CameraInfo::Ptr>
-  parserAC2CameraInfo(const robosense_msgs::RsACDeviceCalib &deviceInfo) {
-    std::pair<sensor_msgs::CameraInfo::Ptr, sensor_msgs::CameraInfo::Ptr>
-        left_right_camera_info_ptr;
-    // Left Camera
-    {
-      sensor_msgs::CameraInfo::Ptr camera_info_ptr(
-          new sensor_msgs::CameraInfo());
-      auto &cam_info = *camera_info_ptr;
-      cam_info.distortion_model = "rational_polynomial";
-      cam_info.binning_x = 0;
-      cam_info.binning_y = 0;
-
-      cam_info.K = {deviceInfo.camfx,
-                    0,
-                    deviceInfo.camcx,
-                    0,
-                    deviceInfo.camfy,
-                    deviceInfo.camcy,
-                    0,
-                    0,
-                    1};
-      cam_info.P = {deviceInfo.camfx,
-                    0,
-                    deviceInfo.camcx,
-                    0,
-                    0,
-                    deviceInfo.camfy,
-                    deviceInfo.camcy,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1};
-      cam_info.D = {deviceInfo.camdistcoeff1, deviceInfo.camdistcoeff2,
-                    deviceInfo.camdistcoeff3, deviceInfo.camdistcoeff4,
-                    deviceInfo.camdistcoeff5, deviceInfo.camdistcoeff6,
-                    deviceInfo.camdistcoeff7, deviceInfo.camdistcoeff8};
-
-      cam_info.width = deviceInfo.imagewidth;
-      cam_info.height = deviceInfo.imageheight;
-      cam_info.roi.x_offset = 0;
-      cam_info.roi.y_offset = 0;
-      cam_info.roi.width = cam_info.width;
-      cam_info.roi.height = cam_info.height;
-
-      left_right_camera_info_ptr.first = camera_info_ptr;
-    }
-
-    // Right Camera
-    {
-      sensor_msgs::CameraInfo::Ptr camera_info_ptr(
-          new sensor_msgs::CameraInfo());
-      auto &cam_info = *camera_info_ptr;
-      cam_info.distortion_model = "rational_polynomial";
-      cam_info.binning_x = 0;
-      cam_info.binning_y = 0;
-
-      cam_info.K = {deviceInfo.camrfx,
-                    0,
-                    deviceInfo.camrcx,
-                    0,
-                    deviceInfo.camrfy,
-                    deviceInfo.camrcy,
-                    0,
-                    0,
-                    1};
-      cam_info.P = {deviceInfo.camrfx,
-                    0,
-                    deviceInfo.camrcx,
-                    0,
-                    0,
-                    deviceInfo.camrfy,
-                    deviceInfo.camrcy,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1};
-      cam_info.D = {deviceInfo.camrdistcoeff1, deviceInfo.camrdistcoeff2,
-                    deviceInfo.camrdistcoeff3, deviceInfo.camrdistcoeff4,
-                    deviceInfo.camrdistcoeff5, deviceInfo.camrdistcoeff6,
-                    deviceInfo.camrdistcoeff7, deviceInfo.camrdistcoeff8};
-
-      cam_info.width = deviceInfo.imagewidth;
-      cam_info.height = deviceInfo.imageheight;
-      cam_info.roi.x_offset = 0;
-      cam_info.roi.y_offset = 0;
-      cam_info.roi.width = cam_info.width;
-      cam_info.roi.height = cam_info.height;
-
-      left_right_camera_info_ptr.second = camera_info_ptr;
-    }
-
-    return left_right_camera_info_ptr;
-  }
-
-#elif defined(ROS2_FOUND)
-  sensor_msgs::msg::CameraInfo::SharedPtr
-  parserAC1CameraInfo(const std::string &filePath) {
-    sensor_msgs::msg::CameraInfo::SharedPtr camera_info_ptr;
-    YAML::Node calibNode;
-    try {
-      calibNode = YAML::LoadFile(filePath);
-    } catch (...) {
-      logError("Load Yaml File Failed: filePath = " + filePath);
-      return nullptr;
-    }
-
-    if (!calibNode["DEVICE_ID"].IsDefined() ||
-        !calibNode["Sensor"].IsDefined()) {
-      logError("Load Yaml File: " + filePath +
-               " Successed, But Not Include \"DEVICE_ID\" or/and \"Sensor\" "
-               "Node !");
-      return nullptr;
-    }
-
-    YAML::Node sensorNode = calibNode["Sensor"];
-    if (!sensorNode["Camera"].IsDefined()) {
-      logError("Load Yaml File: " + filePath +
-               " Successed, But Not Include \"Camera\" Node !");
-      return nullptr;
-    }
-
-    camera_info_ptr = parserCameraInfo(sensorNode["Camera"]);
-
-    return camera_info_ptr;
-  }
-
-  std::pair<sensor_msgs::msg::CameraInfo::SharedPtr,
-            sensor_msgs::msg::CameraInfo::SharedPtr>
-  parserAC2CameraInfo(const std::string &filePath) {
-    std::pair<sensor_msgs::msg::CameraInfo::SharedPtr,
-              sensor_msgs::msg::CameraInfo::SharedPtr>
-        left_right_camera_info_ptr;
-
-    YAML::Node calibNode;
-    try {
-      calibNode = YAML::LoadFile(filePath);
-    } catch (...) {
-      logError("Load Yaml File Failed: filePath = " + filePath);
-      return {nullptr, nullptr};
-    }
-
-    if (!calibNode["DEVICE_ID"].IsDefined() ||
-        !calibNode["Sensor"].IsDefined()) {
-      logError("Load Yaml File: " + filePath +
-               " Successed, But Not Include \"DEVICE_ID\" or/and \"Sensor\" "
-               "Node !");
-      return {nullptr, nullptr};
-    }
-
-    YAML::Node sensorNode = calibNode["Sensor"];
-    if (!(sensorNode["Camera"].IsDefined() &&
-          sensorNode["Camera_R"].IsDefined())) {
-      logError("Load Yaml File: " + filePath +
-               " Successed, But Not Include \"Camera\" Or/And "
-               "\"Camera_R\" Node !");
-      return {nullptr, nullptr};
-    }
-
-    left_right_camera_info_ptr.first = parserCameraInfo(sensorNode["Camera"]);
-    left_right_camera_info_ptr.second =
-        parserCameraInfo(sensorNode["Camera_R"]);
-
-    return left_right_camera_info_ptr;
-  }
-
-  sensor_msgs::msg::CameraInfo::SharedPtr
-  parserCameraInfo(const YAML::Node &calibNode) {
-    sensor_msgs::msg::CameraInfo::SharedPtr camera_info_ptr(
-        new sensor_msgs::msg::CameraInfo());
-    auto &cam_info = *camera_info_ptr;
-
-    cam_info.distortion_model = "rational_polynomial";
-    cam_info.binning_x = 0;
-    cam_info.binning_y = 0;
-
-    if (calibNode["intrinsic"]) {
-      YAML::Node intrinsic_node = calibNode["intrinsic"];
-      if (intrinsic_node["int_matrix"]) {
-        std::vector<double> int_matrix =
-            intrinsic_node["int_matrix"].as<std::vector<double>>();
-        double fx = int_matrix[0]; // fx
-        double fy = int_matrix[4]; // fy
-        double cx = int_matrix[2]; // cx
-        double cy = int_matrix[5]; // cy
-        cam_info.k = {int_matrix[0], int_matrix[1], int_matrix[2],
-                      int_matrix[3], int_matrix[4], int_matrix[5],
-                      int_matrix[6], int_matrix[7], int_matrix[8]};
-        cam_info.p = {int_matrix[0], int_matrix[1], int_matrix[2], 0.0,
-                      int_matrix[3], int_matrix[4], int_matrix[5], 0.0,
-                      int_matrix[6], int_matrix[7], int_matrix[8], 1.0};
-      }
-      if (intrinsic_node["dist_coeff"]) {
-        std::vector<double> dist_coeff =
-            intrinsic_node["dist_coeff"].as<std::vector<double>>();
-        for (int i = 0; i < 8; i++) {
-          // std::cout << " " << dist_coeff[i];
-          cam_info.d.push_back(dist_coeff[i]);
-        }
-      }
-      if (intrinsic_node["image_size"]) {
-        std::vector<int> image_size =
-            intrinsic_node["image_size"].as<std::vector<int>>();
-        cam_info.width = image_size[0];
-        cam_info.height = image_size[1];
-        cam_info.roi.x_offset = 0;
-        cam_info.roi.y_offset = 0;
-        cam_info.roi.width = image_size[0];
-        cam_info.roi.height = image_size[1];
-      }
-    }
-
-    return camera_info_ptr;
-  }
-
-  int parserImageRectifyMap(
-      const sensor_msgs::msg::CameraInfo::SharedPtr &camera_info_ptr,
-      cv::Mat &map1, cv::Mat &map2) {
-    if (camera_info_ptr) {
-      cv::Mat cameraMatrix =
-          (cv::Mat_<double>(3, 3) << camera_info_ptr->k[0],
-           camera_info_ptr->k[1], camera_info_ptr->k[2], camera_info_ptr->k[3],
-           camera_info_ptr->k[4], camera_info_ptr->k[5], camera_info_ptr->k[6],
-           camera_info_ptr->k[7], camera_info_ptr->k[8]);
-      cv::Mat distCoeffsMat =
-          (cv::Mat_<double>(1, 8) << camera_info_ptr->d[0],
-           camera_info_ptr->d[1], camera_info_ptr->d[2], camera_info_ptr->d[3],
-           camera_info_ptr->d[4], camera_info_ptr->d[5], camera_info_ptr->d[6],
-           camera_info_ptr->d[7]);
-
-      cv::initUndistortRectifyMap(
-          cameraMatrix, distCoeffsMat, cv::Mat(), cameraMatrix,
-          cv::Size(camera_info_ptr->width, camera_info_ptr->height), CV_16SC2,
-          map1, map2);
-    } else {
-      return -1;
-    }
-
-    return 0;
-  }
-
-  sensor_msgs::msg::CameraInfo::SharedPtr
-  parserAC1CameraInfo(const robosense_msgs::msg::RsACDeviceCalib &deviceInfo) {
-    sensor_msgs::msg::CameraInfo::SharedPtr camera_info_ptr(
-        new sensor_msgs::msg::CameraInfo());
-    auto &cam_info = *camera_info_ptr;
-
-    cam_info.distortion_model = "rational_polynomial";
-    cam_info.binning_x = 0;
-    cam_info.binning_y = 0;
-
-    cam_info.k = {deviceInfo.camfx,
-                  0,
-                  deviceInfo.camcx,
-                  0,
-                  deviceInfo.camfy,
-                  deviceInfo.camcy,
-                  0,
-                  0,
-                  1};
-    cam_info.p = {deviceInfo.camfx,
-                  0,
-                  deviceInfo.camcx,
-                  0,
-                  0,
-                  deviceInfo.camfy,
-                  deviceInfo.camcy,
-                  0,
-                  0,
-                  0,
-                  0,
-                  1};
-    cam_info.d = {deviceInfo.camdistcoeff1, deviceInfo.camdistcoeff2,
-                  deviceInfo.camdistcoeff3, deviceInfo.camdistcoeff4,
-                  deviceInfo.camdistcoeff5, deviceInfo.camdistcoeff6,
-                  deviceInfo.camdistcoeff7, deviceInfo.camdistcoeff8};
-
-    cam_info.width = deviceInfo.imagewidth;
-    cam_info.height = deviceInfo.imageheight;
-    cam_info.roi.x_offset = 0;
-    cam_info.roi.y_offset = 0;
-    cam_info.roi.width = cam_info.width;
-    cam_info.roi.height = cam_info.height;
-
-    return camera_info_ptr;
-  }
-
-  std::pair<sensor_msgs::msg::CameraInfo::SharedPtr,
-            sensor_msgs::msg::CameraInfo::SharedPtr>
-  parserAC2CameraInfo(const robosense_msgs::msg::RsACDeviceCalib &deviceInfo) {
-    std::pair<sensor_msgs::msg::CameraInfo::SharedPtr,
-              sensor_msgs::msg::CameraInfo::SharedPtr>
-        left_right_camera_info_ptr;
-    // Left Camera
-    {
-      sensor_msgs::msg::CameraInfo::SharedPtr camera_info_ptr(
-          new sensor_msgs::msg::CameraInfo());
-      auto &cam_info = *camera_info_ptr;
-      cam_info.distortion_model = "rational_polynomial";
-      cam_info.binning_x = 0;
-      cam_info.binning_y = 0;
-
-      cam_info.k = {deviceInfo.camfx,
-                    0,
-                    deviceInfo.camcx,
-                    0,
-                    deviceInfo.camfy,
-                    deviceInfo.camcy,
-                    0,
-                    0,
-                    1};
-      cam_info.p = {deviceInfo.camfx,
-                    0,
-                    deviceInfo.camcx,
-                    0,
-                    0,
-                    deviceInfo.camfy,
-                    deviceInfo.camcy,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1};
-      cam_info.d = {deviceInfo.camdistcoeff1, deviceInfo.camdistcoeff2,
-                    deviceInfo.camdistcoeff3, deviceInfo.camdistcoeff4,
-                    deviceInfo.camdistcoeff5, deviceInfo.camdistcoeff6,
-                    deviceInfo.camdistcoeff7, deviceInfo.camdistcoeff8};
-
-      cam_info.width = deviceInfo.imagewidth;
-      cam_info.height = deviceInfo.imageheight;
-      cam_info.roi.x_offset = 0;
-      cam_info.roi.y_offset = 0;
-      cam_info.roi.width = cam_info.width;
-      cam_info.roi.height = cam_info.height;
-
-      left_right_camera_info_ptr.first = camera_info_ptr;
-    }
-
-    // Right Camera
-    {
-      sensor_msgs::msg::CameraInfo::SharedPtr camera_info_ptr(
-          new sensor_msgs::msg::CameraInfo());
-      auto &cam_info = *camera_info_ptr;
-      cam_info.distortion_model = "rational_polynomial";
-      cam_info.binning_x = 0;
-      cam_info.binning_y = 0;
-
-      cam_info.k = {deviceInfo.camrfx,
-                    0,
-                    deviceInfo.camrcx,
-                    0,
-                    deviceInfo.camrfy,
-                    deviceInfo.camrcy,
-                    0,
-                    0,
-                    1};
-      cam_info.p = {deviceInfo.camrfx,
-                    0,
-                    deviceInfo.camrcx,
-                    0,
-                    0,
-                    deviceInfo.camrfy,
-                    deviceInfo.camrcy,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1};
-      cam_info.d = {deviceInfo.camrdistcoeff1, deviceInfo.camrdistcoeff2,
-                    deviceInfo.camrdistcoeff3, deviceInfo.camrdistcoeff4,
-                    deviceInfo.camrdistcoeff5, deviceInfo.camrdistcoeff6,
-                    deviceInfo.camrdistcoeff7, deviceInfo.camrdistcoeff8};
-
-      cam_info.width = deviceInfo.imagewidth;
-      cam_info.height = deviceInfo.imageheight;
-      cam_info.roi.x_offset = 0;
-      cam_info.roi.y_offset = 0;
-      cam_info.roi.width = cam_info.width;
-      cam_info.roi.height = cam_info.height;
-
-      left_right_camera_info_ptr.second = camera_info_ptr;
-    }
-
-    return left_right_camera_info_ptr;
-  }
-#endif // ROS_ROS2_FOUND
 
 private:
   // RGB 处理线程
@@ -6185,77 +4765,36 @@ private:
   bool enable_ros2_zero_copy = false;
 #if defined(ROS_FOUND)
   ros::NodeHandle nh;
-  ros::Publisher publisher_camera_info;
-  ros::Publisher publisher_left_camera_info;
-  ros::Publisher publisher_right_camera_info;
-  ros::Publisher publisher_rgb;
-  ros::Publisher publisher_rgb_left;
-  ros::Publisher publisher_rgb_right;
-  ros::Publisher publisher_rgb_rect;
-  ros::Publisher publisher_rgb_rectify_left;
-  ros::Publisher publisher_rgb_rectify_right;
-  ros::Publisher publisher_depth;
-  ros::Publisher publisher_depth_ac2_wave2;
-  ros::Publisher publisher_imu;
-  ros::Publisher publisher_jpeg;
-  ros::Publisher publisher_jpeg_left;
-  ros::Publisher publisher_jpeg_right;
-  ros::Publisher publisher_jpeg_rect;
-  ros::Publisher publisher_jpeg_rectify_left;
-  ros::Publisher publisher_jpeg_rectify_right;
-  ros::Publisher publisher_device_calib_info;
 #elif defined(ROS2_FOUND)
-  rclcpp::Publisher<robosense_msgs::msg::RsImage8M>::SharedPtr
-      publisher_rgb_loan;
-  rclcpp::Publisher<robosense_msgs::msg::RsImage4M>::SharedPtr
-      publisher_rgb_left_loan;
-  rclcpp::Publisher<robosense_msgs::msg::RsImage4M>::SharedPtr
-      publisher_rgb_right_loan;
-  rclcpp::Publisher<robosense_msgs::msg::RsImage8M>::SharedPtr
-      publisher_rgb_rectify_loan;
-  rclcpp::Publisher<robosense_msgs::msg::RsImage4M>::SharedPtr
-      publisher_rgb_rectify_left_loan;
-  rclcpp::Publisher<robosense_msgs::msg::RsImage4M>::SharedPtr
-      publisher_rgb_rectify_right_loan;
-  rclcpp::Publisher<robosense_msgs::msg::RsPointCloud1M>::SharedPtr
-      publisher_depth_loan;
-  rclcpp::Publisher<robosense_msgs::msg::RsPointCloud4M>::SharedPtr
-      publisher_depth_ac2_loan;
-  rclcpp::Publisher<robosense_msgs::msg::RsPointCloud4M>::SharedPtr
-      publisher_depth_ac2_wave2_loan;
-  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr
-      publisher_camera_info;
-  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr
-      publisher_left_camera_info;
-  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr
-      publisher_right_camera_info;
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr publisher_rgb;
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr publisher_rgb_left;
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr publisher_rgb_right;
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr publisher_rgb_rect;
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr
-      publisher_rgb_rectify_left;
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr
-      publisher_rgb_rectify_right;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_depth;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-      publisher_depth_ac2_wave2;
-  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr publisher_imu;
-  rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr
-      publisher_jpeg;
-  rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr
-      publisher_jpeg_left;
-  rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr
-      publisher_jpeg_right;
-  rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr
-      publisher_jpeg_rect;
-  rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr
-      publisher_jpeg_rectify_left;
-  rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr
-      publisher_jpeg_rectify_right;
-  rclcpp::Publisher<robosense_msgs::msg::RsACDeviceCalib>::SharedPtr
-      publisher_device_calib_info;
+  ROS_ZEROCOPY_PUBLISHER_RSIMAGE8M_PTR publisher_rgb_loan;
+  ROS_ZEROCOPY_PUBLISHER_RSIMAGE4M_PTR publisher_rgb_left_loan;
+  ROS_ZEROCOPY_PUBLISHER_RSIMAGE4M_PTR publisher_rgb_right_loan;
+  ROS_ZEROCOPY_PUBLISHER_RSIMAGE8M_PTR publisher_rgb_rectify_loan;
+  ROS_ZEROCOPY_PUBLISHER_RSIMAGE4M_PTR publisher_rgb_rectify_left_loan;
+  ROS_ZEROCOPY_PUBLISHER_RSIMAGE4M_PTR publisher_rgb_rectify_right_loan;
+  ROS_PUBLISHER_POINTCLOUD1M_PTR publisher_depth_loan;
+  ROS_PUBLISHER_POINTCLOUD4M_PTR publisher_depth_ac2_loan;
+  ROS_PUBLISHER_POINTCLOUD4M_PTR publisher_depth_ac2_wave2_loan;
 #endif // ROS_ROS2_FOUND
+  ROS_PUBLISHER_CAMERAINFO_PTR publisher_camera_info;
+  ROS_PUBLISHER_CAMERAINFO_PTR publisher_left_camera_info;
+  ROS_PUBLISHER_CAMERAINFO_PTR publisher_right_camera_info;
+  ROS_PUBLISHER_IMAGE_PTR publisher_rgb;
+  ROS_PUBLISHER_IMAGE_PTR publisher_rgb_left;
+  ROS_PUBLISHER_IMAGE_PTR publisher_rgb_right;
+  ROS_PUBLISHER_IMAGE_PTR publisher_rgb_rectify;
+  ROS_PUBLISHER_IMAGE_PTR publisher_rgb_rectify_left;
+  ROS_PUBLISHER_IMAGE_PTR publisher_rgb_rectify_right;
+  ROS_PUBLISHER_POINTCLOUD2_PTR publisher_depth;
+  ROS_PUBLISHER_POINTCLOUD2_PTR publisher_depth_ac2_wave2;
+  ROS_PUBLISHER_IMU_PTR publisher_imu;
+  ROS_PUBLISHER_COMPRESSED_IMAGE_PTR publisher_jpeg;
+  ROS_PUBLISHER_COMPRESSED_IMAGE_PTR publisher_jpeg_left;
+  ROS_PUBLISHER_COMPRESSED_IMAGE_PTR publisher_jpeg_right;
+  ROS_PUBLISHER_COMPRESSED_IMAGE_PTR publisher_jpeg_rectify;
+  ROS_PUBLISHER_COMPRESSED_IMAGE_PTR publisher_jpeg_rectify_left;
+  ROS_PUBLISHER_COMPRESSED_IMAGE_PTR publisher_jpeg_rectify_right;
+  ROS_PUBLISHER_RSACDEVICECALIB_PTR publisher_device_calib_info;
 
   // 设备管理
   std::string device_interface;
@@ -6267,11 +4806,7 @@ private:
   bool current_device_info_ready = false;
   bool current_device_info_valid = false;
   robosense::lidar::DeviceInfo current_device_info;
-#if defined(ROS_FOUND)
-  robosense_msgs::RsACDeviceCalib current_device_calib_msg;
-#elif defined(ROS2_FOUND)
-  robosense_msgs::msg::RsACDeviceCalib current_device_calib_msg;
-#endif // ROS_ROS2_FOUND
+  ROS_RSACDEVICECALIB current_device_calib_msg;
 
   // 驱动相关
   int image_input_fps = 30;
@@ -6292,18 +4827,13 @@ private:
   bool right_camera_rectify_map_valid = false;
   cv::Mat right_camera_rectify_map1;
   cv::Mat right_camera_rectify_map2;
-#if defined(ROS_FOUND)
-  sensor_msgs::CameraInfo::Ptr camera_info_ptr;
-  sensor_msgs::CameraInfo::Ptr left_camera_info_ptr;
-  sensor_msgs::CameraInfo::Ptr right_camera_info_ptr;
-#elif defined(ROS2_FOUND)
-  sensor_msgs::msg::CameraInfo::SharedPtr camera_info_ptr;
-  sensor_msgs::msg::CameraInfo::SharedPtr left_camera_info_ptr;
-  sensor_msgs::msg::CameraInfo::SharedPtr right_camera_info_ptr;
-#endif // ROS_ROS2_FOUND
+  // 相机内参
+  ROS_CAMERAINFO_PTR camera_info_ptr;
+  ROS_CAMERAINFO_PTR left_camera_info_ptr;
+  ROS_CAMERAINFO_PTR right_camera_info_ptr;
   bool device_manager_debug = false;
   bool enable_use_lidar_clock = false;
-  int64_t ros_stamp_compensate_ns = 0;
+  double timestamp_compensate_s = 0.0;
   bool enable_use_dense_points = false;
   bool enable_use_first_point_ts = false;
   bool enable_ac2_pointcloud_wave_split = false;
@@ -6325,6 +4855,9 @@ private:
   std::string ac2_left_image_frame_id = "rslidar";
   std::string ac2_right_image_frame_id = "rslidar";
   std::string imu_frame_id = "rslidar";
+
+  // Log 配置
+  robosense::log::RSLogConfig log_config;
 
   // JEPG 图像编码
   int32_t image_width_rgb;
@@ -6444,7 +4977,7 @@ int main(int argc, char **argv) {
   }
   rclcpp::spin(publisherPtr);
   rclcpp::shutdown();
-#endif
+#endif // defined(ROS_ROS2_FOUND)
 
   return 0;
 }
