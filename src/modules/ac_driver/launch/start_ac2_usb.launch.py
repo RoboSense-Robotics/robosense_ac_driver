@@ -38,6 +38,7 @@ def generate_launch_description():
             output='screen', 
             parameters=[{
                 'device_interface': "usb", # "usb"/"gmsl"
+                'usb_box_interface': "x3m", # "2EG(大板, 逐步废弃)" / "x3m(小盒子)"
                 'image_input_fps': 15,
                 'imu_input_fps': 200,
                 'enable_jpeg': False,

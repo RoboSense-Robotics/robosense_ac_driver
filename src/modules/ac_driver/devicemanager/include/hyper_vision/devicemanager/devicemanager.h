@@ -68,6 +68,11 @@ typedef enum DeviceInterfaceType {
   DEVICE_INTERFACE_GMSL,
 } DeviceInterfaceType_t;
 
+typedef enum UsbInterfaceType {
+  USB_INTERFACE_x3m = 0,
+  USB_INTERFACE_2EG,
+} UsbInterfaceType_t;
+
 class RSDeviceInterfaceUtil {
 public:
   using Ptr = std::shared_ptr<RSDeviceInterfaceUtil>;
@@ -83,6 +88,26 @@ public:
     DeviceInterfaceType type = DeviceInterfaceType::DEVICE_INTERFACE_USB;
     if (stype == "gmsl") {
       type = DeviceInterfaceType::DEVICE_INTERFACE_GMSL;
+    }
+    return type;
+  }
+};
+
+class RSUsbInterfaceUtil {
+public:
+  using Ptr = std::shared_ptr<RSUsbInterfaceUtil>;
+  using ConstPtr = std::shared_ptr<const RSUsbInterfaceUtil>;
+
+public:
+  RSUsbInterfaceUtil() = default;
+  ~RSUsbInterfaceUtil() = default;
+
+public:
+  static UsbInterfaceType
+  fromStringToDeviceInterfaceType(const std::string &stype) {
+    UsbInterfaceType type = UsbInterfaceType::USB_INTERFACE_x3m;
+    if (stype == "2EG") {
+      type = UsbInterfaceType::USB_INTERFACE_2EG;
     }
     return type;
   }

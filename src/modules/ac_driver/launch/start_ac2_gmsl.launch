@@ -4,6 +4,8 @@
     <!-- Add parameters or remappings here if needed -->
     <!-- Device Input Interface Mode -->
     <param name="device_interface" value="gmsl" />
+    <!-- Usb Input Interface Mode: 2EG/x3m --> 
+    <param name="usb_box_interface" value="x3m" />
     <!-- Frame rate for image input, measured in frames per second -->
     <param name="image_input_fps" value="10" />
     <!-- Frame rate for IMU (Inertial Measurement Unit) input, measured in frames per second -->

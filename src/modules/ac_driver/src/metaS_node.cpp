@@ -208,6 +208,8 @@ private:
 #if defined(ROS_FOUND)
     ros::NodeHandle private_nh("~"); // parameter node
     private_nh.param<std::string>("device_interface", device_interface, "usb");
+    private_nh.param<std::string>("usb_box_interface", usb_box_interface,
+                                  "x3m");
     private_nh.param<int32_t>("image_input_fps", image_input_fps, 30);
     private_nh.param<int32_t>("imu_input_fps", imu_input_fps, 200);
     private_nh.param<bool>("enable_jpeg", enable_jpeg, false);
@@ -456,6 +458,8 @@ private:
 #elif defined(ROS2_FOUND)
     device_interface =
         declare_parameter<std::string>("device_interface", "usb");
+    usb_box_interface =
+        declare_parameter<std::string>("usb_box_interface", "x3m");
     image_input_fps = declare_parameter<int32_t>("image_input_fps", 30);
     imu_input_fps = declare_parameter<int32_t>("imu_input_fps", 200);
     enable_jpeg = declare_parameter<bool>("enable_jpeg", false);
@@ -655,6 +659,9 @@ private:
 
     device_interface_type = robosense::device::RSDeviceInterfaceUtil::
         fromStringToDeviceInterfaceType(device_interface);
+    usb_box_interface_type =
+        robosense::device::RSUsbInterfaceUtil::fromStringToDeviceInterfaceType(
+            usb_box_interface);
     if (device_interface_type ==
             robosense::device::DeviceInterfaceType::DEVICE_INTERFACE_GMSL &&
         gmsl_device_number.empty()) {
@@ -676,6 +683,11 @@ private:
 
     std::ostringstream ofstr;
     ofstr << "device_interface = " << device_interface
+          << ", device_interface_type = "
+          << static_cast<int32_t>(device_interface_type)
+          << ", usb_box_interface = " << usb_box_interface
+          << ", usb_box_interface_type = "
+          << static_cast<int32_t>(usb_box_interface_type)
           << ", image_input_fps = " << image_input_fps
           << ", imu_input_fps = " << imu_input_fps
           << ", enable_jpeg = " << enable_jpeg
@@ -1143,8 +1155,23 @@ private:
       if (device_interface_type ==
           robosense::device::DeviceInterfaceType::DEVICE_INTERFACE_USB) {
         if (enable_angle_and_device_calib_info_from_device) {
-          image_width_driver = image_usb_with_angle_calib_width_ac2_driver;
-          image_height_driver = image_usb_with_angle_calib_height_ac2_driver;
+          // 根据USB 接入类型设置不同参数
+          switch (usb_box_interface_type) {
+          case robosense::device::UsbInterfaceType::USB_INTERFACE_x3m: {
+            image_width_driver =
+                image_usb_with_angle_calib_x3m_width_ac2_driver;
+            image_height_driver =
+                image_usb_with_angle_calib_x3m_height_ac2_driver;
+            break;
+          }
+          case robosense::device::UsbInterfaceType::USB_INTERFACE_2EG: {
+            image_width_driver =
+                image_usb_with_angle_calib_2eg_width_ac2_driver;
+            image_height_driver =
+                image_usb_with_angle_calib_2eg_height_ac2_driver;
+            break;
+          }
+          }
         } else {
           image_width_driver = image_usb_width_ac2_driver;
           image_height_driver = image_usb_height_ac2_driver;
@@ -4838,6 +4865,9 @@ private:
   bool enable_use_first_point_ts = false;
   bool enable_ac2_pointcloud_wave_split = false;
   bool enable_angle_and_device_calib_info_from_device = false;
+  std::string usb_box_interface;
+  robosense::device::UsbInterfaceType usb_box_interface_type =
+      robosense::device::USB_INTERFACE_x3m;
   bool enable_device_calib_info_from_device_pripority = false;
 
   bool enable_pointcloud_send = true;
@@ -4915,8 +4945,10 @@ private:
   const int image_height_ac1 = 1080;
   const int image_usb_width_ac2_driver = 1616;
   const int image_usb_height_ac2_driver = 2592;
-  const int image_usb_with_angle_calib_width_ac2_driver = 1616;
-  const int image_usb_with_angle_calib_height_ac2_driver = 2636;
+  const int image_usb_with_angle_calib_x3m_width_ac2_driver = 1612;
+  const int image_usb_with_angle_calib_x3m_height_ac2_driver = 2636;
+  const int image_usb_with_angle_calib_2eg_width_ac2_driver = 1616;
+  const int image_usb_with_angle_calib_2eg_height_ac2_driver = 2636;
   const int image_gmsl_width_ac2_driver = 6464;
   const int image_gmsl_height_ac2_driver = 2592;
   const int image_width_ac2_rgb = 1600;
