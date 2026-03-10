@@ -128,7 +128,30 @@ source devel/setup.bash
 roslaunch ac_driver start_ac2_usb.launch
 ```
 
-## 7. 话题名称及消息类型
+## 7. 多设备使用
+
+如果需要同时使用多台 AC 传感器，请确保每台设备的 USB 连接稳定。连接多少个 AC 就开多少个终端，每个终端修改如下参数，然后分别启动多个驱动实例。
+
+使用 ROS 的话，就修改 `src/modules/ac_driver/launch/start_ac2_usb.launch` 中的参数：
+
+```xml
+<param name="topic_prefix" value="" />
+<param name="serial_number" value="" />
+```
+
+使用 ROS2 的话，就修改 `src/modules/ac_driver/launch/start_ac2_usb.launch.py` 中的参数：
+
+```python
+'topic_prefix': "",
+'serial_number': "",
+```
+
+| 参数名称 | 说明 |
+|---------------|---------------|
+| topic_prefix  | 话题前缀，可自定义 |
+| serial_number | 分别填入实际使用的 AC 的序列号 |
+
+## 8. 话题名称及消息类型
 
 > 💡 说明：下方表格中，每行“话题类型”第一行为 ROS2 格式，第二行为 ROS 格式。
 
@@ -157,26 +180,3 @@ roslaunch ac_driver start_ac2_usb.launch
 | `/rs_camera/right/rect/color/image_raw/compressed` | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | 经过校正后的右相机图像数据的压缩版本 |
 | `/rs_lidar/points`                                 | `sensor_msgs/msg/PointCloud2` <br> `sensor_msgs/PointCloud2`         | 点云数据 frame_id 为 rslidar |
 | `/rs_imu`                                          | `sensor_msgs/msg/Imu` <br> `sensor_msgs/Imu`                         | IMU（惯性测量单元）数据 |
-
-## 8. 多设备使用
-
-如果需要同时使用多台 AC 传感器，请确保每台设备的 USB 连接稳定。连接多少个 AC 就开多少个终端，每个终端修改如下参数，然后分别启动多个驱动实例。
-
-使用 ROS 的话，就修改 `src/modules/ac_driver/launch/start_ac2_usb.launch` 中的参数：
-
-```xml
-<param name="topic_prefix" value="" />
-<param name="serial_number" value="" />
-```
-
-使用 ROS2 的话，就修改 `src/modules/ac_driver/launch/start_ac2_usb.launch.py` 中的参数：
-
-```python
-'topic_prefix': "",
-'serial_number': "",
-```
-
-| 参数名称 | 说明 |
-|---------------|---------------|
-| topic_prefix  | 话题前缀，可自定义 |
-| serial_number | 分别填入实际使用的 AC 的序列号 |

@@ -132,35 +132,7 @@ source devel/setup.bash
 roslaunch ac_driver start_ac2_usb.launch
 ```
 
-## 7. Topic Name And Data Type 
-
-> 💡 Note: In the table below, each "Topic Type" row contains the ROS2 format first, followed by the ROS format.
-
-For AC1
-| Topic Name                                   | Topic Type                                                           | Description                      |
-|----------------------------------------------|----------------------------------------------------------------------|----------------------------------|
-| `/rs_camera/color/image_raw`                 | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Raw color camera image data |
-| `/rs_camera/color/image_raw/compressed`      | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of raw color camera image data |
-| `/rs_camera/rect/color/image_raw`            | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Rectified color camera image data |
-| `/rs_camera/rect/color/image_raw/compressed` | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of rectified color camera image data |
-| `/rs_lidar/points`                           | `sensor_msgs/msg/PointCloud2` <br> `sensor_msgs/PointCloud2`         | Point cloud data with frame_id as rslidar |
-| `/rs_imu`                                    | `sensor_msgs/msg/Imu` <br> `sensor_msgs/Imu`                         | IMU (Inertial Measurement Unit) data |
-
-For AC2
-| Topic Name                                         | Topic Type                                                           | Description                      |
-|----------------------------------------------------|----------------------------------------------------------------------|----------------------------------|
-| `/rs_camera/left/color/image_raw`                  | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Raw left camera image data |
-| `/rs_camera/left/color/image_raw/compressed`       | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of raw left camera image data |
-| `/rs_camera/left/rect/color/image_raw`             | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Rectified left camera image data |
-| `/rs_camera/left/rect/color/image_raw/compressed`  | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of rectified left camera image data |
-| `/rs_camera/right/color/image_raw`                 | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Raw right camera image data |
-| `/rs_camera/right/color/image_raw/compressed`      | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of raw right camera image data |
-| `/rs_camera/right/rect/color/image_raw`            | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Rectified right camera image data |
-| `/rs_camera/right/rect/color/image_raw/compressed` | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of rectified right camera image data |
-| `/rs_lidar/points`                                 | `sensor_msgs/msg/PointCloud2` <br> `sensor_msgs/PointCloud2`         | Point cloud data with frame_id as rslidar |
-| `/rs_imu`                                          | `sensor_msgs/msg/Imu` <br> `sensor_msgs/Imu`                         | IMU (Inertial Measurement Unit) data |
-
-## 8. Multi-Device Usage
+## 7. Multi-Device Usage
 
 If you need to use multiple AC sensors simultaneously, ensure that the USB connection for each device is stable. Open a separate terminal for each AC sensor connected, modify the parameters as shown below in each terminal, and then start the multiple driver instances individually.
 
@@ -188,3 +160,31 @@ Modify the parameters in `src/modules/ac_driver/launch/start_ac2_usb.launch.py`:
 | ------------- | -------------------------------------------------------------------- |
 | topic_prefix  | Topic prefix (customizable).                                         |
 | serial_number | Enter the actual serial number of the specific AC sensor being used. |
+
+## 8. Topic Name And Data Type 
+
+> 💡 Note: In the table below, each "Topic Type" row contains the ROS2 format first, followed by the ROS format.
+
+For AC1
+| Topic Name                                   | Topic Type                                                           | Description                      |
+|----------------------------------------------|----------------------------------------------------------------------|----------------------------------|
+| `/rs_camera/color/image_raw`                 | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Raw color camera image data |
+| `/rs_camera/color/image_raw/compressed`      | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of raw color camera image data |
+| `/rs_camera/rect/color/image_raw`            | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Rectified color camera image data |
+| `/rs_camera/rect/color/image_raw/compressed` | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of rectified color camera image data |
+| `/rs_lidar/points`                           | `sensor_msgs/msg/PointCloud2` <br> `sensor_msgs/PointCloud2`         | Point cloud data with frame_id as rslidar |
+| `/rs_imu`                                    | `sensor_msgs/msg/Imu` <br> `sensor_msgs/Imu`                         | IMU (Inertial Measurement Unit) data |
+
+For AC2
+| Topic Name                                         | Topic Type                                                           | Description                      |
+|----------------------------------------------------|----------------------------------------------------------------------|----------------------------------|
+| `/rs_camera/left/color/image_raw`                  | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Raw left camera image data |
+| `/rs_camera/left/color/image_raw/compressed`       | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of raw left camera image data |
+| `/rs_camera/left/rect/color/image_raw`             | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Rectified left camera image data |
+| `/rs_camera/left/rect/color/image_raw/compressed`  | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of rectified left camera image data |
+| `/rs_camera/right/color/image_raw`                 | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Raw right camera image data |
+| `/rs_camera/right/color/image_raw/compressed`      | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of raw right camera image data |
+| `/rs_camera/right/rect/color/image_raw`            | `sensor_msgs/msg/Image` <br> `sensor_msgs/Image`                     | Rectified right camera image data |
+| `/rs_camera/right/rect/color/image_raw/compressed` | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of rectified right camera image data |
+| `/rs_lidar/points`                                 | `sensor_msgs/msg/PointCloud2` <br> `sensor_msgs/PointCloud2`         | Point cloud data with frame_id as rslidar |
+| `/rs_imu`                                          | `sensor_msgs/msg/Imu` <br> `sensor_msgs/Imu`                         | IMU (Inertial Measurement Unit) data |
