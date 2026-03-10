@@ -68,7 +68,7 @@ After connection, verify device recognition using `lsusb` You should see an entr
 >
 > For systems with a desktop environment, you may optionally install a graphical tool like `usbview`.
 
-## 5. Build ac_driver
+## 5. Build
 
 Open a new terminal window and change the current directory to the root of your workspace containing the `ac_driver` source code:
 
@@ -100,7 +100,7 @@ rm -rf build/ devel/  # (Optional) Clean previous build files
 catkin_make
 ```
 
-## 6. Run ac_driver
+## 6. Run
 
 Once `ac_driver` has been successfully built, you can launch the node. Execute the corresponding command based on your ROS version.
 
@@ -159,3 +159,32 @@ For AC2
 | `/rs_camera/right/rect/color/image_raw/compressed` | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of rectified right camera image data |
 | `/rs_lidar/points`                                 | `sensor_msgs/msg/PointCloud2` <br> `sensor_msgs/PointCloud2`         | Point cloud data with frame_id as rslidar |
 | `/rs_imu`                                          | `sensor_msgs/msg/Imu` <br> `sensor_msgs/Imu`                         | IMU (Inertial Measurement Unit) data |
+
+## 8. Multi-Device Usage
+
+If you need to use multiple AC sensors simultaneously, ensure that the USB connection for each device is stable. Open a separate terminal for each AC sensor connected, modify the parameters as shown below in each terminal, and then start the multiple driver instances individually.
+
+### For ROS Users
+
+Modify the parameters in `src/modules/ac_driver/launch/start_ac2_usb.launch`:
+
+```xml
+<param name="topic_prefix" value="" />
+<param name="serial_number" value="" />
+```
+
+### For ROS2 Users
+
+Modify the parameters in `src/modules/ac_driver/launch/start_ac2_usb.launch.py`:
+
+```python
+'topic_prefix': "",
+'serial_number': "",
+```
+
+### Parameter Descriptions
+
+|   Parameter   |                          Description                                 |
+| ------------- | -------------------------------------------------------------------- |
+| topic_prefix  | Topic prefix (customizable).                                         |
+| serial_number | Enter the actual serial number of the specific AC sensor being used. |
