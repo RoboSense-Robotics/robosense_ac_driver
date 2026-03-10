@@ -176,5 +176,5 @@ roslaunch ac_driver start_ac2_usb.launch
 'serial_number': "",
 ```
 
-| topic_prefix | 话题前缀，可自定义 |
-| serial_number | 分别填入实际使用的 AC 的序列号 |
+- topic_prefix  话题前缀，可自定义
+- serial_number 分别填入实际使用的 AC 的序列号
