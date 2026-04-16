@@ -132,29 +132,44 @@ source devel/setup.bash
 roslaunch ac_driver start_ac2_usb.launch
 ```
 
-## 7. Multi-Device Usage
+## 7. Multi-Device 
 
-If you need to use multiple AC sensors simultaneously, ensure that the USB connection for each device is stable. Open a separate terminal for each AC sensor connected, modify the parameters as shown below in each terminal, and then start the multiple driver instances individually.
+If multiple AC sensors need to be used simultaneously, please ensure that the USB connection of each device is stable. Open as many terminals as there are AC sensors, and then run the corresponding startup files in each terminal.
 
 ### For ROS Users
 
-Modify the parameters in `src/modules/ac_driver/launch/start_ac2_usb.launch`:
+It is recommended that each AC (Air Conditioner) corresponds to a startup file. A new startup file can be created by copying the existing `start_ac2_usb.launch`,
+
+```bash
+cp src/modules/ac_driver/launch/start_ac2_usb.launch src/modules/ac_driver/launch/start_ac2_usb_sn30.launch
+cp src/modules/ac_driver/launch/start_ac2_usb.launch src/modules/ac_driver/launch/start_ac2_usb_sn31.launch
+```
+
+Then modify the following parameters respectively to distinguish the data streams of different devices,
 
 ```xml
+<node name="ms_node_xxx" pkg="ac_driver" type="ms_node" output="screen">
 <param name="topic_prefix" value="" />
 <param name="serial_number" value="" />
 ```
 
+Replace `ms_node_xxx` with different node names, such as `ms_node_sn30`, `ms_node_sn31`, etc.
+
 ### For ROS2 Users
 
-Modify the parameters in `src/modules/ac_driver/launch/start_ac2_usb.launch.py`:
+Similarly, each AC corresponds to a startup file, which can be created by copying the existing `start_ac2_usb.launch.py` file,
+
+```bash
+cp src/modules/ac_driver/launch/start_ac2_usb.launch.py src/modules/ac_driver/launch/start_ac2_usb_sn30.launch.py
+cp src/modules/ac_driver/launch/start_ac2_usb.launch.py src/modules/ac_driver/launch/start_ac2_usb_sn31.launch.py
+```
+
+Then modify the following parameters respectively to distinguish the data streams of different devices,
 
 ```python
 'topic_prefix': "",
 'serial_number': "",
 ```
-
-### Parameter Descriptions
 
 |   Parameter   |                          Description                                 |
 | ------------- | -------------------------------------------------------------------- |

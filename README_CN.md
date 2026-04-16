@@ -130,16 +130,37 @@ roslaunch ac_driver start_ac2_usb.launch
 
 ## 7. 多设备使用
 
-如果需要同时使用多台 AC 传感器，请确保每台设备的 USB 连接稳定。连接多少个 AC 就开多少个终端，每个终端修改如下参数，然后分别启动多个驱动实例。
+如果需要同时使用多台 AC 传感器，请确保每台设备的 USB 连接稳定，连接多少个 AC 就开多少个终端，然后在每个终端分别运行对应的启动文件。
 
-使用 ROS 的话，就修改 `src/modules/ac_driver/launch/start_ac2_usb.launch` 中的参数：
+### ROS 
+
+建议每台 AC 对应一个启动文件，可以通过复制原有的 `start_ac2_usb.launch` 来创建新的启动文件，
+
+```bash
+cp src/modules/ac_driver/launch/start_ac2_usb.launch src/modules/ac_driver/launch/start_ac2_usb_sn30.launch
+cp src/modules/ac_driver/launch/start_ac2_usb.launch src/modules/ac_driver/launch/start_ac2_usb_sn31.launch
+```
+
+然后分别修改如下参数，以区分不同设备的数据流，
 
 ```xml
+<node name="ms_node_xxx" pkg="ac_driver" type="ms_node" output="screen">
 <param name="topic_prefix" value="" />
 <param name="serial_number" value="" />
 ```
 
-使用 ROS2 的话，就修改 `src/modules/ac_driver/launch/start_ac2_usb.launch.py` 中的参数：
+将其中的 `ms_node_xxx` 替换为不同的节点名称，如 `ms_node_sn30`、`ms_node_sn31` 等。
+
+### ROS2 
+
+同样地，每台 AC 对应一个启动文件，可以通过复制原有的 `start_ac2_usb.launch.py` 来创建新的启动文件，
+
+```bash
+cp src/modules/ac_driver/launch/start_ac2_usb.launch.py src/modules/ac_driver/launch/start_ac2_usb_sn30.launch.py
+cp src/modules/ac_driver/launch/start_ac2_usb.launch.py src/modules/ac_driver/launch/start_ac2_usb_sn31.launch.py
+```
+
+然后分别修改如下参数，以区分不同设备的数据流，
 
 ```python
 'topic_prefix': "",
