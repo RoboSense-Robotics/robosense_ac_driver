@@ -138,7 +138,7 @@ If multiple AC sensors need to be used simultaneously, please ensure that the US
 
 ### For ROS Users
 
-It is recommended that each AC (Air Conditioner) corresponds to a startup file. A new startup file can be created by copying the existing `start_ac2_usb.launch`,
+It is recommended that each AC corresponds to a startup file. A new startup file can be created by copying the existing `start_ac2_usb.launch`,
 
 ```bash
 cp src/modules/ac_driver/launch/start_ac2_usb.launch src/modules/ac_driver/launch/start_ac2_usb_sn30.launch
