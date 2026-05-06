@@ -27,10 +27,10 @@ def generate_launch_description():
         default_value='false',
         description='enable rviz display'
     )
-    start_rviz = LaunchConfiguration('start_rviz_node')
+    start_rviz_node = LaunchConfiguration('start_rviz_node')
         
     return LaunchDescription([
-        start_rviz_node,
+        # SetEnvironmentVariable(name='RCUTILS_COLORIZED_OUTPUT', value='1'), 
         Node(
             package='ac_driver',
             executable='ms_node',
@@ -42,8 +42,7 @@ def generate_launch_description():
                 'image_input_fps': 15,
                 'imu_input_fps': 200,
                 'enable_jpeg': False,
-                'enable_rectify': False, 
-                'enable_rectify_jpeg': False,
+                'enable_rectify': True, 
                 'jpeg_quality': 70, 
                 'topic_prefix': "",
                 'serial_number': "",  
@@ -55,7 +54,7 @@ def generate_launch_description():
                 'imu_frame_id': "rslidar", 
                 'enable_angle_and_device_calib_info_from_device': True, 
                 'angle_calib_basic_dir_path': "", # angle_calib_dir_path: 表示install路径下的conf/angle  
-                'enable_device_calib_info_from_device_pripority': True,
+                'enable_device_calib_info_from_device_pripority': False,
                 'device_calib_file_path': "",     # calib_file_path: 表示install路径下的conf/calibration.yaml
                 'device_manager_debug': False,
                 'enable_use_lidar_clock': False, 
@@ -74,21 +73,33 @@ def generate_launch_description():
                 'log_file_dir_path': "", # log_dir_path: 表示包的install目录下的log文件夹路径
                 'log_level': 2,          # 0: trace; 1: debug; 2: info; 3: warn; 4: error; 5: fatal 
                 'is_log_file_trunc': True, 
+                # enable factor 
+                'enable_factor_send': True, 
                 # ac1 image crop 
                 'ac1_crop_top': 0, 
                 'ac1_crop_bottom': 0, 
                 'ac1_crop_left': 0, 
                 'ac1_crop_right': 0,
-                # ac2 left image crop 
+                # ac2 A0 left image crop 
                 'ac2_left_crop_top': 0, 
                 'ac2_left_crop_bottom': 240, 
                 'ac2_left_crop_left': 320, 
                 'ac2_left_crop_right': 0,
-                # ac2 right image crop 
+                # ac2 A0 right image crop 
                 'ac2_right_crop_top': 0, 
                 'ac2_right_crop_bottom': 240, 
                 'ac2_right_crop_left': 320, 
                 'ac2_right_crop_right': 0,
+                # ac2 A1 left image crop 
+                'ac2_a1_left_crop_top': 0, 
+                'ac2_a1_left_crop_bottom': 0, 
+                'ac2_a1_left_crop_left': 0, 
+                'ac2_a1_left_crop_right': 0,
+                # ac2 A1 right image crop 
+                'ac2_a1_right_crop_top': 0, 
+                'ac2_a1_right_crop_bottom': 0, 
+                'ac2_a1_right_crop_left': 0, 
+                'ac2_a1_right_crop_right': 0,
                 # ac2_denoise_param 
                 'enable_denoise': False,  
                 'enable_smooth': False,  
@@ -145,7 +156,7 @@ def generate_launch_description():
         Node(
             package='rviz2',
             executable='rviz2',
-            condition=IfCondition(start_rviz),
+            condition=IfCondition(start_rviz_node),
             name='rviz2',
             arguments=['-d', rviz_config_file],
             output='screen'

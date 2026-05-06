@@ -19,24 +19,46 @@
 #include "hyper_vision/logmanager/logmanager.h"
 #if defined(ROS_FOUND)
 #include <robosense_msgs/RsACDeviceCalib.h>
+#include <robosense_msgs/RsACDeviceFactor.h>
 #include <sensor_msgs/CameraInfo.h>
 #elif defined(ROS2_FOUND)
 #include <robosense_msgs/msg/rs_ac_device_calib.hpp>
+#include <robosense_msgs/msg/rs_ac_device_factor.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #endif // ROS_ROS2_FOUND
+#include "stereo_rectifier.h"
 #include <algorithm>
 #include <opencv2/calib3d.hpp>
 #include <yaml-cpp/yaml.h>
 
 #if defined(ROS_FOUND)
 using ROS_RSACDEVICECALIB = robosense_msgs::RsACDeviceCalib;
+using ROS_RSACDEVICEFACTOR = robosense_msgs::RsACDeviceFactor;
 using ROS_CAMERAINFO = sensor_msgs::CameraInfo;
 #elif defined(ROS2_FOUND)
 using ROS_RSACDEVICECALIB = robosense_msgs::msg::RsACDeviceCalib;
+using ROS_RSACDEVICEFACTOR = robosense_msgs::msg::RsACDeviceFactor;
 using ROS_CAMERAINFO = sensor_msgs::msg::CameraInfo;
 #endif // defined(ROS_ROS2_FOUND)
 using ROS_RSACDEVICECALIB_PTR = std::shared_ptr<ROS_RSACDEVICECALIB>;
+using RSO_RSACDEVICEFACTOR_PTR = std::shared_ptr<ROS_RSACDEVICEFACTOR>;
 using ROS_CAMERAINFO_PTR = std::shared_ptr<ROS_CAMERAINFO>;
+
+/***
+ *
+ * 转换1:
+ * YAML FILE -> ROS_RSACDEVICECALIB
+ *            \   |
+ *              ROS_CAMERAINFO
+ *
+ * 转换2:
+ * robosense::lidar::DeviceInfo -> ROS_RSACDEVICECALIB -> ROS_CAMERAINFO
+ *
+ * 转换3:
+ * ROS_RSACDEVICECALIB <-> robosense::calibration::DeviceCalibration
+ *
+ *
+ *///
 
 namespace robosense {
 namespace calib {
@@ -132,7 +154,8 @@ public:
   }
 
   static int parserAC1DeviceCalibInfo(const std::string &filePath,
-                                      ROS_RSACDEVICECALIB &device_calib_msg) {
+                                      ROS_RSACDEVICECALIB &device_calib_msg,
+                                      ROS_RSACDEVICEFACTOR &device_factor_msg) {
     YAML::Node calibNode;
     try {
       calibNode = YAML::LoadFile(filePath);
@@ -157,6 +180,11 @@ public:
           " Successed, But Not Include \"Camera\" Or/And \"IMU\" Node !");
       return -3;
     }
+
+    // 重置Factor
+    device_factor_msg.f1 = 1.0;
+    device_factor_msg.f2 = 1.0;
+    device_factor_msg.f3 = 1.0;
 
     // DEVICE_ID
     device_calib_msg.device_id = calibNode["DEVICE_ID"].as<std::string>();
@@ -225,11 +253,23 @@ public:
       device_calib_msg.imutolidartz = extrinsic_trans["z"].as<double>();
     }
 
+    // Factor 参数读取
+    if (sensorNode["F1"].IsDefined()) {
+      device_factor_msg.f1 = sensorNode["F1"].as<double>();
+    }
+    if (sensorNode["F2"].IsDefined()) {
+      device_factor_msg.f2 = sensorNode["F2"].as<double>();
+    }
+    if (sensorNode["F3"].IsDefined()) {
+      device_factor_msg.f3 = sensorNode["F3"].as<double>();
+    }
+
     return 0;
   }
 
   static int parserAC2DeviceCalibInfo(const std::string &filePath,
-                                      ROS_RSACDEVICECALIB &device_calib_msg) {
+                                      ROS_RSACDEVICECALIB &device_calib_msg,
+                                      ROS_RSACDEVICEFACTOR &device_factor_msg) {
     YAML::Node calibNode;
     try {
       calibNode = YAML::LoadFile(filePath);
@@ -256,6 +296,11 @@ public:
           "Or/And \"IMU\" Node !");
       return -3;
     }
+
+    // 重置Factor
+    device_factor_msg.f1 = 1.0;
+    device_factor_msg.f2 = 1.0;
+    device_factor_msg.f3 = 1.0;
 
     // DEVICE_ID
     device_calib_msg.device_id = calibNode["DEVICE_ID"].as<std::string>();
@@ -359,13 +404,30 @@ public:
       device_calib_msg.imutolidartz = extrinsic_trans["z"].as<double>();
     }
 
+    // Factor 参数读取
+    if (sensorNode["F1"].IsDefined()) {
+      device_factor_msg.f1 = sensorNode["F1"].as<double>();
+    }
+    if (sensorNode["F2"].IsDefined()) {
+      device_factor_msg.f2 = sensorNode["F2"].as<double>();
+    }
+    if (sensorNode["F3"].IsDefined()) {
+      device_factor_msg.f3 = sensorNode["F3"].as<double>();
+    }
+
     return 0;
   }
 
   static int
   parserDeviceCalibInfo(const std::string &uuid,
                         const robosense::lidar::DeviceInfo &device_info,
-                        ROS_RSACDEVICECALIB &device_calib_msg) {
+                        ROS_RSACDEVICECALIB &device_calib_msg,
+                        ROS_RSACDEVICEFACTOR &device_factor_msg) {
+    // 重置Factor
+    device_factor_msg.f1 = 1.0;
+    device_factor_msg.f2 = 1.0;
+    device_factor_msg.f3 = 1.0;
+
     // 分别对应AC1/AC2的标定参数
     auto calib_params = device_info.calib_params;
     const auto &calib_params_str = device_info.calib_params_str;
@@ -507,6 +569,12 @@ public:
         device_calib_msg.imutolidarty = value;
       } else if (key == "imutolidartz") {
         device_calib_msg.imutolidartz = value;
+      } else if (key == "f1") {
+        device_factor_msg.f1 = value;
+      } else if (key == "f2") {
+        device_factor_msg.f2 = value;
+      } else if (key == "f3") {
+        device_factor_msg.f3 = value;
       } else {
         RS_SPDLOG_WARN("Not Support key = " + key);
         continue;
@@ -519,6 +587,275 @@ public:
                    std::to_string(device_calib_msg.imagewidth));
     RS_SPDLOG_INFO(std::string("image_height = ") +
                    std::to_string(device_calib_msg.imageheight));
+
+    return 0;
+  }
+
+  static int parserAC1DeviceCalibration(
+      const ROS_RSACDEVICECALIB &device_calib_msg,
+      robosense::calibration::DeviceCalibration &deviceCalibration) {
+    deviceCalibration.device_id = device_calib_msg.device_id;
+    // CAMERA -> LIDAR
+    {
+      auto &camera = deviceCalibration.sensor.camera;
+
+      auto &extrinsic = camera.extrinsic;
+      extrinsic.translation = cv::Vec3d(device_calib_msg.camtolidartx,
+                                        device_calib_msg.camtolidarty,
+                                        device_calib_msg.camtolidartz);
+      extrinsic.quaternion = cv::Vec4d(
+          device_calib_msg.camtolidarqw, device_calib_msg.camtolidarqx,
+          device_calib_msg.camtolidarqy, device_calib_msg.camtolidarqz);
+
+      auto &intrinsic = camera.intrinsic;
+      intrinsic.model = "Pinhole";
+      intrinsic.image_size =
+          cv::Size(device_calib_msg.imagewidth, device_calib_msg.imageheight);
+      intrinsic.int_matrix =
+          cv::Matx33d(device_calib_msg.camfx, 0, device_calib_msg.camcx, 0,
+                      device_calib_msg.camfy, device_calib_msg.camcy, 0, 0, 1);
+      intrinsic.dist_coeff = std::vector<double>{
+          device_calib_msg.camdistcoeff1, device_calib_msg.camdistcoeff2,
+          device_calib_msg.camdistcoeff3, device_calib_msg.camdistcoeff4,
+          device_calib_msg.camdistcoeff5, device_calib_msg.camdistcoeff6,
+          device_calib_msg.camdistcoeff7, device_calib_msg.camdistcoeff8};
+    }
+
+    // 不填写: 用camera填充
+    // CAMERA_R -> CAMERA
+    deviceCalibration.sensor.camera_r = deviceCalibration.sensor.camera;
+
+    // IMU -> LIDAR
+    {
+      auto &imu = deviceCalibration.sensor.imu;
+
+      auto &extrinsic = imu.extrinsic;
+      extrinsic.translation = cv::Vec3d(device_calib_msg.imutolidartx,
+                                        device_calib_msg.imutolidarty,
+                                        device_calib_msg.imutolidartz);
+      extrinsic.quaternion = cv::Vec4d(
+          device_calib_msg.imutolidarqw, device_calib_msg.imutolidarqx,
+          device_calib_msg.imutolidarqy, device_calib_msg.imutolidarqz);
+    }
+
+    return 0;
+  }
+
+  static int parserAC1DeviceCalibInfo(
+      const robosense::calibration::DeviceCalibration &deviceCalibration,
+      ROS_RSACDEVICECALIB &device_calib_msg) {
+    device_calib_msg.device_id = deviceCalibration.device_id;
+    // CAMERA -> LIDAR
+    {
+      const auto &camera = deviceCalibration.sensor.camera;
+
+      const auto &extrinsic = camera.extrinsic;
+      device_calib_msg.camtolidartx = extrinsic.translation[0];
+      device_calib_msg.camtolidarty = extrinsic.translation[1];
+      device_calib_msg.camtolidartz = extrinsic.translation[2];
+
+      device_calib_msg.camtolidarqw = extrinsic.quaternion[0];
+      device_calib_msg.camtolidarqx = extrinsic.quaternion[1];
+      device_calib_msg.camtolidarqy = extrinsic.quaternion[2];
+      device_calib_msg.camtolidarqz = extrinsic.quaternion[3];
+
+      auto &intrinsic = camera.intrinsic;
+      device_calib_msg.imagewidth = intrinsic.image_size.width;
+      device_calib_msg.imageheight = intrinsic.image_size.height;
+
+      device_calib_msg.camfx = intrinsic.int_matrix(0, 0);
+      device_calib_msg.camfy = intrinsic.int_matrix(1, 1);
+      device_calib_msg.camcx = intrinsic.int_matrix(0, 2);
+      device_calib_msg.camcy = intrinsic.int_matrix(1, 2);
+
+      device_calib_msg.camdistcoeff1 = intrinsic.dist_coeff[0];
+      device_calib_msg.camdistcoeff2 = intrinsic.dist_coeff[1];
+      device_calib_msg.camdistcoeff3 = intrinsic.dist_coeff[2];
+      device_calib_msg.camdistcoeff4 = intrinsic.dist_coeff[3];
+      device_calib_msg.camdistcoeff5 = intrinsic.dist_coeff[4];
+      device_calib_msg.camdistcoeff6 = intrinsic.dist_coeff[5];
+      device_calib_msg.camdistcoeff7 = intrinsic.dist_coeff[6];
+      device_calib_msg.camdistcoeff8 = intrinsic.dist_coeff[7];
+    }
+
+    // 不填写
+    // CAMERA_R -> CAMERA
+
+    // IMU -> LIDAR
+    {
+      const auto &imu = deviceCalibration.sensor.imu;
+
+      const auto &extrinsic = imu.extrinsic;
+      device_calib_msg.imutolidartx = extrinsic.translation[0];
+      device_calib_msg.imutolidarty = extrinsic.translation[1];
+      device_calib_msg.imutolidartz = extrinsic.translation[2];
+
+      device_calib_msg.imutolidarqw = extrinsic.quaternion[0];
+      device_calib_msg.imutolidarqx = extrinsic.quaternion[1];
+      device_calib_msg.imutolidarqy = extrinsic.quaternion[2];
+      device_calib_msg.imutolidarqz = extrinsic.quaternion[3];
+    }
+
+    return 0;
+  }
+
+  static int parserAC2DeviceCalibration(
+      const ROS_RSACDEVICECALIB &device_calib_msg,
+      robosense::calibration::DeviceCalibration &deviceCalibration) {
+    deviceCalibration.device_id = device_calib_msg.device_id;
+    // CAMERA -> LIDAR
+    {
+      auto &camera = deviceCalibration.sensor.camera;
+
+      auto &extrinsic = camera.extrinsic;
+      extrinsic.translation = cv::Vec3d(device_calib_msg.camtolidartx,
+                                        device_calib_msg.camtolidarty,
+                                        device_calib_msg.camtolidartz);
+      extrinsic.quaternion = cv::Vec4d(
+          device_calib_msg.camtolidarqw, device_calib_msg.camtolidarqx,
+          device_calib_msg.camtolidarqy, device_calib_msg.camtolidarqz);
+
+      auto &intrinsic = camera.intrinsic;
+      intrinsic.model = "Pinhole";
+      intrinsic.image_size =
+          cv::Size(device_calib_msg.imagewidth, device_calib_msg.imageheight);
+      intrinsic.int_matrix =
+          cv::Matx33d(device_calib_msg.camfx, 0, device_calib_msg.camcx, 0,
+                      device_calib_msg.camfy, device_calib_msg.camcy, 0, 0, 1);
+      intrinsic.dist_coeff = std::vector<double>{
+          device_calib_msg.camdistcoeff1, device_calib_msg.camdistcoeff2,
+          device_calib_msg.camdistcoeff3, device_calib_msg.camdistcoeff4,
+          device_calib_msg.camdistcoeff5, device_calib_msg.camdistcoeff6,
+          device_calib_msg.camdistcoeff7, device_calib_msg.camdistcoeff8};
+    }
+
+    // CAMERA_R -> CAMERA
+    {
+      auto &camera = deviceCalibration.sensor.camera_r;
+
+      auto &extrinsic = camera.extrinsic;
+      extrinsic.translation =
+          cv::Vec3d(device_calib_msg.camrtocamtx, device_calib_msg.camrtocamty,
+                    device_calib_msg.camrtocamtz);
+      extrinsic.quaternion =
+          cv::Vec4d(device_calib_msg.camrtocamqw, device_calib_msg.camrtocamqx,
+                    device_calib_msg.camrtocamqy, device_calib_msg.camrtocamqz);
+
+      auto &intrinsic = camera.intrinsic;
+      intrinsic.model = "Pinhole";
+      intrinsic.image_size =
+          cv::Size(device_calib_msg.imagewidth, device_calib_msg.imageheight);
+      intrinsic.int_matrix = cv::Matx33d(
+          device_calib_msg.camrfx, 0, device_calib_msg.camrcx, 0,
+          device_calib_msg.camrfy, device_calib_msg.camrcy, 0, 0, 1);
+      intrinsic.dist_coeff = std::vector<double>{
+          device_calib_msg.camrdistcoeff1, device_calib_msg.camrdistcoeff2,
+          device_calib_msg.camrdistcoeff3, device_calib_msg.camrdistcoeff4,
+          device_calib_msg.camrdistcoeff5, device_calib_msg.camrdistcoeff6,
+          device_calib_msg.camrdistcoeff7, device_calib_msg.camrdistcoeff8};
+    }
+
+    // IMU -> LIDAR
+    {
+      auto &imu = deviceCalibration.sensor.imu;
+
+      auto &extrinsic = imu.extrinsic;
+      extrinsic.translation = cv::Vec3d(device_calib_msg.imutolidartx,
+                                        device_calib_msg.imutolidarty,
+                                        device_calib_msg.imutolidartz);
+      extrinsic.quaternion = cv::Vec4d(
+          device_calib_msg.imutolidarqw, device_calib_msg.imutolidarqx,
+          device_calib_msg.imutolidarqy, device_calib_msg.imutolidarqz);
+    }
+
+    return 0;
+  }
+
+  static int parserAC2DeviceCalibInfo(
+      const robosense::calibration::DeviceCalibration &deviceCalibration,
+      ROS_RSACDEVICECALIB &device_calib_msg) {
+    device_calib_msg.device_id = deviceCalibration.device_id;
+    // CAMERA -> LIDAR
+    {
+      const auto &camera = deviceCalibration.sensor.camera;
+
+      const auto &extrinsic = camera.extrinsic;
+      device_calib_msg.camtolidartx = extrinsic.translation[0];
+      device_calib_msg.camtolidarty = extrinsic.translation[1];
+      device_calib_msg.camtolidartz = extrinsic.translation[2];
+
+      device_calib_msg.camtolidarqw = extrinsic.quaternion[0];
+      device_calib_msg.camtolidarqx = extrinsic.quaternion[1];
+      device_calib_msg.camtolidarqy = extrinsic.quaternion[2];
+      device_calib_msg.camtolidarqz = extrinsic.quaternion[3];
+
+      auto &intrinsic = camera.intrinsic;
+      device_calib_msg.imagewidth = intrinsic.image_size.width;
+      device_calib_msg.imageheight = intrinsic.image_size.height;
+
+      device_calib_msg.camfx = intrinsic.int_matrix(0, 0);
+      device_calib_msg.camfy = intrinsic.int_matrix(1, 1);
+      device_calib_msg.camcx = intrinsic.int_matrix(0, 2);
+      device_calib_msg.camcy = intrinsic.int_matrix(1, 2);
+
+      device_calib_msg.camdistcoeff1 = intrinsic.dist_coeff[0];
+      device_calib_msg.camdistcoeff2 = intrinsic.dist_coeff[1];
+      device_calib_msg.camdistcoeff3 = intrinsic.dist_coeff[2];
+      device_calib_msg.camdistcoeff4 = intrinsic.dist_coeff[3];
+      device_calib_msg.camdistcoeff5 = intrinsic.dist_coeff[4];
+      device_calib_msg.camdistcoeff6 = intrinsic.dist_coeff[5];
+      device_calib_msg.camdistcoeff7 = intrinsic.dist_coeff[6];
+      device_calib_msg.camdistcoeff8 = intrinsic.dist_coeff[7];
+    }
+
+    // CAMERA_R -> CAMERA
+    {
+      const auto &camera = deviceCalibration.sensor.camera_r;
+
+      const auto &extrinsic = camera.extrinsic;
+      device_calib_msg.camrtocamtx = extrinsic.translation[0];
+      device_calib_msg.camrtocamty = extrinsic.translation[1];
+      device_calib_msg.camrtocamtz = extrinsic.translation[2];
+
+      device_calib_msg.camrtocamqw = extrinsic.quaternion[0];
+      device_calib_msg.camrtocamqx = extrinsic.quaternion[1];
+      device_calib_msg.camrtocamqy = extrinsic.quaternion[2];
+      device_calib_msg.camrtocamqz = extrinsic.quaternion[3];
+
+      auto &intrinsic = camera.intrinsic;
+      // 左相机填充即可
+      // device_calib_msg.imagewidth = intrinsic.image_size.width;
+      // device_calib_msg.imageheight = intrinsic.image_size.height;
+
+      device_calib_msg.camrfx = intrinsic.int_matrix(0, 0);
+      device_calib_msg.camrfy = intrinsic.int_matrix(1, 1);
+      device_calib_msg.camrcx = intrinsic.int_matrix(0, 2);
+      device_calib_msg.camrcy = intrinsic.int_matrix(1, 2);
+
+      device_calib_msg.camrdistcoeff1 = intrinsic.dist_coeff[0];
+      device_calib_msg.camrdistcoeff2 = intrinsic.dist_coeff[1];
+      device_calib_msg.camrdistcoeff3 = intrinsic.dist_coeff[2];
+      device_calib_msg.camrdistcoeff4 = intrinsic.dist_coeff[3];
+      device_calib_msg.camrdistcoeff5 = intrinsic.dist_coeff[4];
+      device_calib_msg.camrdistcoeff6 = intrinsic.dist_coeff[5];
+      device_calib_msg.camrdistcoeff7 = intrinsic.dist_coeff[6];
+      device_calib_msg.camrdistcoeff8 = intrinsic.dist_coeff[7];
+    }
+
+    // IMU -> LIDAR
+    {
+      const auto &imu = deviceCalibration.sensor.imu;
+
+      const auto &extrinsic = imu.extrinsic;
+      device_calib_msg.imutolidartx = extrinsic.translation[0];
+      device_calib_msg.imutolidarty = extrinsic.translation[1];
+      device_calib_msg.imutolidartz = extrinsic.translation[2];
+
+      device_calib_msg.imutolidarqw = extrinsic.quaternion[0];
+      device_calib_msg.imutolidarqx = extrinsic.quaternion[1];
+      device_calib_msg.imutolidarqy = extrinsic.quaternion[2];
+      device_calib_msg.imutolidarqz = extrinsic.quaternion[3];
+    }
 
     return 0;
   }

@@ -91,18 +91,6 @@ Visualization Manager:
       Value: true
     - Class: rviz/Image
       Enabled: true
-      Image Topic: /rs_camera/color/image_raw
-      Max Value: 1
-      Median window: 5
-      Min Value: 0
-      Name: AC1_Image_Rectify
-      Normalize Range: true
-      Queue Size: 2
-      Transport Hint: raw
-      Unreliable: false
-      Value: true
-    - Class: rviz/Image
-      Enabled: true
       Image Topic: /rs_camera/left/color/image_raw
       Max Value: 1
       Median window: 5
@@ -115,35 +103,11 @@ Visualization Manager:
       Value: true
     - Class: rviz/Image
       Enabled: true
-      Image Topic: /rs_camera/left/rect/color/image_raw
-      Max Value: 1
-      Median window: 5
-      Min Value: 0
-      Name: AC2_Left_Rectify
-      Normalize Range: true
-      Queue Size: 2
-      Transport Hint: raw
-      Unreliable: false
-      Value: true
-    - Class: rviz/Image
-      Enabled: true
       Image Topic: /rs_camera/right/color/image_raw
       Max Value: 1
       Median window: 5
       Min Value: 0
       Name: AC2_Right
-      Normalize Range: true
-      Queue Size: 2
-      Transport Hint: raw
-      Unreliable: false
-      Value: true
-    - Class: rviz/Image
-      Enabled: true
-      Image Topic: /rs_camera/right/rect/color/image_raw
-      Max Value: 1
-      Median window: 5
-      Min Value: 0
-      Name: AC2_Right_Rectify
       Normalize Range: true
       Queue Size: 2
       Transport Hint: raw

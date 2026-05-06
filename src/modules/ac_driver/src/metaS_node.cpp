@@ -51,6 +51,37 @@ enum class RS_IMAGE_SOURCE_TYPE : int {
   RS_IMAGE_SOURCE_AC2_RIGHT,
 };
 
+enum class RS_AC2_HARDWARE_TYPE : int {
+  RS_AC2_HARDWARE_UNKNOWN,
+  RS_AC2_HARDWARE_A0,
+  RS_AC2_HARDWARE_A1,
+};
+
+class RSAC2HardwareTypeUtil {
+public:
+  using Ptr = std::shared_ptr<RSAC2HardwareTypeUtil>;
+  using ConstPtr = std::shared_ptr<const RSAC2HardwareTypeUtil>;
+
+public:
+  RSAC2HardwareTypeUtil() = default;
+  ~RSAC2HardwareTypeUtil() = default;
+
+public:
+  static std::string ac2HardwareTypeToString(const RS_AC2_HARDWARE_TYPE type) {
+    switch (type) {
+    case RS_AC2_HARDWARE_TYPE::RS_AC2_HARDWARE_A0: {
+      return "RS_AC2_HARDWARE_A0";
+    }
+    case RS_AC2_HARDWARE_TYPE::RS_AC2_HARDWARE_A1: {
+      return "RS_AC2_HARDWARE_A1";
+    }
+    default: {
+      return "RS_AC2_HARDWARE_UNKNOWN";
+    }
+    }
+  }
+};
+
 class RSImageCropConfig {
 public:
   using Ptr = std::shared_ptr<RSImageCropConfig>;
@@ -214,7 +245,6 @@ private:
     private_nh.param<int32_t>("imu_input_fps", imu_input_fps, 200);
     private_nh.param<bool>("enable_jpeg", enable_jpeg, false);
     private_nh.param<bool>("enable_rectify", enable_rectify, false);
-    private_nh.param<bool>("enable_rectify_jpeg", enable_rectify_jpeg, false);
     private_nh.param<int32_t>("jpeg_quality", jpeg_quality, 70);
     private_nh.param<std::string>("topic_prefix", topic_prefix, "");
     private_nh.param<std::string>("serial_number", serial_number, "");
@@ -269,6 +299,9 @@ private:
     private_nh.param<int32_t>("log_level", log_config.log_level, 2);
     private_nh.param<bool>("is_log_file_trunc", log_config.is_log_file_trunc,
                            true);
+    // factor send
+    private_nh.param<bool>("enable_factor_send", enable_device_factor_send,
+                           false);
     // ac1 crop
     int32_t ac1_crop_top, ac1_crop_bottom, ac1_crop_left, ac1_crop_right;
     private_nh.param<int32_t>("ac1_crop_top", ac1_crop_top, 0);
@@ -277,25 +310,60 @@ private:
     private_nh.param<int32_t>("ac1_crop_right", ac1_crop_right, 0);
     ac1_crop_config.updateCrop(ac1_crop_top, ac1_crop_bottom, ac1_crop_left,
                                ac1_crop_right);
-    // ac2 left crop
-    int32_t ac2_left_crop_top, ac2_left_crop_bottom, ac2_left_crop_left,
-        ac2_left_crop_right;
-    private_nh.param<int32_t>("ac2_left_crop_top", ac2_left_crop_top, 0);
-    private_nh.param<int32_t>("ac2_left_crop_bottom", ac2_left_crop_bottom, 0);
-    private_nh.param<int32_t>("ac2_left_crop_left", ac2_left_crop_left, 0);
-    private_nh.param<int32_t>("ac2_left_crop_right", ac2_left_crop_right, 0);
-    ac2_left_crop_config.updateCrop(ac2_left_crop_top, ac2_left_crop_bottom,
-                                    ac2_left_crop_left, ac2_left_crop_right);
-    // ac2 right crop
-    int32_t ac2_right_crop_top, ac2_right_crop_bottom, ac2_right_crop_left,
-        ac2_right_crop_right;
-    private_nh.param<int32_t>("ac2_right_crop_top", ac2_right_crop_top, 0);
-    private_nh.param<int32_t>("ac2_right_crop_bottom", ac2_right_crop_bottom,
-                              0);
-    private_nh.param<int32_t>("ac2_right_crop_left", ac2_right_crop_left, 0);
-    private_nh.param<int32_t>("ac2_right_crop_right", ac2_right_crop_right, 0);
-    ac2_right_crop_config.updateCrop(ac2_right_crop_top, ac2_right_crop_bottom,
-                                     ac2_right_crop_left, ac2_right_crop_right);
+    // AC2 A0
+    {
+      // ac2 left crop
+      int32_t ac2_left_crop_top, ac2_left_crop_bottom, ac2_left_crop_left,
+          ac2_left_crop_right;
+      private_nh.param<int32_t>("ac2_left_crop_top", ac2_left_crop_top, 0);
+      private_nh.param<int32_t>("ac2_left_crop_bottom", ac2_left_crop_bottom,
+                                0);
+      private_nh.param<int32_t>("ac2_left_crop_left", ac2_left_crop_left, 0);
+      private_nh.param<int32_t>("ac2_left_crop_right", ac2_left_crop_right, 0);
+      ac2_a0_left_crop_config.updateCrop(
+          ac2_left_crop_top, ac2_left_crop_bottom, ac2_left_crop_left,
+          ac2_left_crop_right);
+      // ac2 right crop
+      int32_t ac2_right_crop_top, ac2_right_crop_bottom, ac2_right_crop_left,
+          ac2_right_crop_right;
+      private_nh.param<int32_t>("ac2_right_crop_top", ac2_right_crop_top, 0);
+      private_nh.param<int32_t>("ac2_right_crop_bottom", ac2_right_crop_bottom,
+                                0);
+      private_nh.param<int32_t>("ac2_right_crop_left", ac2_right_crop_left, 0);
+      private_nh.param<int32_t>("ac2_right_crop_right", ac2_right_crop_right,
+                                0);
+      ac2_a0_right_crop_config.updateCrop(
+          ac2_right_crop_top, ac2_right_crop_bottom, ac2_right_crop_left,
+          ac2_right_crop_right);
+    }
+    // AC2 A1
+    {
+      // ac2 left crop
+      int32_t ac2_left_crop_top, ac2_left_crop_bottom, ac2_left_crop_left,
+          ac2_left_crop_right;
+      private_nh.param<int32_t>("ac2_a1_left_crop_top", ac2_left_crop_top, 0);
+      private_nh.param<int32_t>("ac2_a1_left_crop_bottom", ac2_left_crop_bottom,
+                                0);
+      private_nh.param<int32_t>("ac2_a1_left_crop_left", ac2_left_crop_left, 0);
+      private_nh.param<int32_t>("ac2_a1_left_crop_right", ac2_left_crop_right,
+                                0);
+      ac2_a1_left_crop_config.updateCrop(
+          ac2_left_crop_top, ac2_left_crop_bottom, ac2_left_crop_left,
+          ac2_left_crop_right);
+      // ac2 right crop
+      int32_t ac2_right_crop_top, ac2_right_crop_bottom, ac2_right_crop_left,
+          ac2_right_crop_right;
+      private_nh.param<int32_t>("ac2_a1_right_crop_top", ac2_right_crop_top, 0);
+      private_nh.param<int32_t>("ac2_a1_right_crop_bottom",
+                                ac2_right_crop_bottom, 0);
+      private_nh.param<int32_t>("ac2_a1_right_crop_left", ac2_right_crop_left,
+                                0);
+      private_nh.param<int32_t>("ac2_a1_right_crop_right", ac2_right_crop_right,
+                                0);
+      ac2_a1_right_crop_config.updateCrop(
+          ac2_right_crop_top, ac2_right_crop_bottom, ac2_right_crop_left,
+          ac2_right_crop_right);
+    }
 #if defined(ENABLE_SUPPORT_RS_DRIVER_ALGORITHM)
     // AC2 Denoise parameter
     private_nh.param<bool>("enable_denoise",
@@ -464,7 +532,6 @@ private:
     imu_input_fps = declare_parameter<int32_t>("imu_input_fps", 200);
     enable_jpeg = declare_parameter<bool>("enable_jpeg", false);
     enable_rectify = declare_parameter<bool>("enable_rectify", false);
-    enable_rectify_jpeg = declare_parameter<bool>("enable_rectify_jpeg", false);
     jpeg_quality = declare_parameter<int32_t>("jpeg_quality", 70);
     topic_prefix = declare_parameter<std::string>("topic_prefix", "");
     serial_number = declare_parameter<std::string>("serial_number", "");
@@ -519,6 +586,9 @@ private:
     log_config.log_level = declare_parameter<int32_t>("log_level", 2);
     log_config.is_log_file_trunc =
         declare_parameter<bool>("is_log_file_trunc", true);
+    // factor send
+    enable_device_factor_send =
+        declare_parameter<bool>("enable_factor_send", false);
     // ac1 crop
     int32_t ac1_crop_top, ac1_crop_bottom, ac1_crop_left, ac1_crop_right;
     ac1_crop_top = declare_parameter<int32_t>("ac1_crop_top", 0);
@@ -527,27 +597,64 @@ private:
     ac1_crop_right = declare_parameter<int32_t>("ac1_crop_right", 0);
     ac1_crop_config.updateCrop(ac1_crop_top, ac1_crop_bottom, ac1_crop_left,
                                ac1_crop_right);
-    // ac2 left crop
-    int32_t ac2_left_crop_top, ac2_left_crop_bottom, ac2_left_crop_left,
-        ac2_left_crop_right;
-    ac2_left_crop_top = declare_parameter<int32_t>("ac2_left_crop_top", 0);
-    ac2_left_crop_bottom =
-        declare_parameter<int32_t>("ac2_left_crop_bottom", 0);
-    ac2_left_crop_left = declare_parameter<int32_t>("ac2_left_crop_left", 0);
-    ac2_left_crop_right = declare_parameter<int32_t>("ac2_left_crop_right", 0);
-    ac2_left_crop_config.updateCrop(ac2_left_crop_top, ac2_left_crop_bottom,
-                                    ac2_left_crop_left, ac2_left_crop_right);
-    // ac2 right crop
-    int32_t ac2_right_crop_top, ac2_right_crop_bottom, ac2_right_crop_left,
-        ac2_right_crop_right;
-    ac2_right_crop_top = declare_parameter<int32_t>("ac2_right_crop_top", 0);
-    ac2_right_crop_bottom =
-        declare_parameter<int32_t>("ac2_right_crop_bottom", 0);
-    ac2_right_crop_left = declare_parameter<int32_t>("ac2_right_crop_left", 0);
-    ac2_right_crop_right =
-        declare_parameter<int32_t>("ac2_right_crop_right", 0);
-    ac2_right_crop_config.updateCrop(ac2_right_crop_top, ac2_right_crop_bottom,
-                                     ac2_right_crop_left, ac2_right_crop_right);
+    // AC2 A0
+    {
+      // ac2 left crop
+      int32_t ac2_left_crop_top, ac2_left_crop_bottom, ac2_left_crop_left,
+          ac2_left_crop_right;
+      ac2_left_crop_top = declare_parameter<int32_t>("ac2_left_crop_top", 0);
+      ac2_left_crop_bottom =
+          declare_parameter<int32_t>("ac2_left_crop_bottom", 0);
+      ac2_left_crop_left = declare_parameter<int32_t>("ac2_left_crop_left", 0);
+      ac2_left_crop_right =
+          declare_parameter<int32_t>("ac2_left_crop_right", 0);
+      ac2_a0_left_crop_config.updateCrop(
+          ac2_left_crop_top, ac2_left_crop_bottom, ac2_left_crop_left,
+          ac2_left_crop_right);
+      // ac2 right crop
+      int32_t ac2_right_crop_top, ac2_right_crop_bottom, ac2_right_crop_left,
+          ac2_right_crop_right;
+      ac2_right_crop_top = declare_parameter<int32_t>("ac2_right_crop_top", 0);
+      ac2_right_crop_bottom =
+          declare_parameter<int32_t>("ac2_right_crop_bottom", 0);
+      ac2_right_crop_left =
+          declare_parameter<int32_t>("ac2_right_crop_left", 0);
+      ac2_right_crop_right =
+          declare_parameter<int32_t>("ac2_right_crop_right", 0);
+      ac2_a0_right_crop_config.updateCrop(
+          ac2_right_crop_top, ac2_right_crop_bottom, ac2_right_crop_left,
+          ac2_right_crop_right);
+    }
+    // AC2 A1
+    {
+      // ac2 left crop
+      int32_t ac2_left_crop_top, ac2_left_crop_bottom, ac2_left_crop_left,
+          ac2_left_crop_right;
+      ac2_left_crop_top = declare_parameter<int32_t>("ac2_a1_left_crop_top", 0);
+      ac2_left_crop_bottom =
+          declare_parameter<int32_t>("ac2_a1_left_crop_bottom", 0);
+      ac2_left_crop_left =
+          declare_parameter<int32_t>("ac2_a1_left_crop_left", 0);
+      ac2_left_crop_right =
+          declare_parameter<int32_t>("ac2_a1_left_crop_right", 0);
+      ac2_a1_left_crop_config.updateCrop(
+          ac2_left_crop_top, ac2_left_crop_bottom, ac2_left_crop_left,
+          ac2_left_crop_right);
+      // ac2 right crop
+      int32_t ac2_right_crop_top, ac2_right_crop_bottom, ac2_right_crop_left,
+          ac2_right_crop_right;
+      ac2_right_crop_top =
+          declare_parameter<int32_t>("ac2_a1_right_crop_top", 0);
+      ac2_right_crop_bottom =
+          declare_parameter<int32_t>("ac2_a1_right_crop_bottom", 0);
+      ac2_right_crop_left =
+          declare_parameter<int32_t>("ac2_a1_right_crop_left", 0);
+      ac2_right_crop_right =
+          declare_parameter<int32_t>("ac2_a1_right_crop_right", 0);
+      ac2_a1_right_crop_config.updateCrop(
+          ac2_right_crop_top, ac2_right_crop_bottom, ac2_right_crop_left,
+          ac2_right_crop_right);
+    }
 #if defined(ENABLE_SUPPORT_RS_DRIVER_ALGORITHM)
     // AC2 Denoise parameter
     algorithm_param.denoise_param.enable_denoise =
@@ -692,7 +799,7 @@ private:
           << ", imu_input_fps = " << imu_input_fps
           << ", enable_jpeg = " << enable_jpeg
           << ", enable_rectify = " << enable_rectify
-          << ", enable_rectify_jpeg = " << enable_rectify_jpeg
+          << ", enable_jpeg = " << enable_jpeg
           << ", jpeg_quality = " << jpeg_quality
           << ", topic_prefix = " << topic_prefix
           << ", serial_number = " << serial_number
@@ -720,8 +827,11 @@ private:
           << ", enable_ros2_zero_copy(only for ros2) = "
           << enable_ros2_zero_copy
           << ", ac1 crop = " << ac1_crop_config.toString()
-          << ", ac2 left crop = " << ac2_left_crop_config.toString()
-          << ", ac2 right crop = " << ac2_right_crop_config.toString();
+          << ", ac2 A0 left crop = " << ac2_a0_left_crop_config.toString()
+          << ", ac2 A0 right crop = " << ac2_a0_right_crop_config.toString()
+          << ", ac2 A1 left crop = " << ac2_a1_left_crop_config.toString()
+          << ", ac2 A1 right crop = " << ac2_a1_right_crop_config.toString()
+          << ", enable_device_factor_send = " << enable_device_factor_send;
     RS_SPDLOG_INFO(ofstr.str());
 
     if (!(enable_pointcloud_send || enable_ac1_image_send ||
@@ -916,35 +1026,39 @@ private:
   }
 
   int initTopicNames() {
+    // RGB
     topic_name = topic_prefix + "/rs_camera/color/image_raw";
     left_topic_name = topic_prefix + "/rs_camera/left/color/image_raw";
     right_topic_name = topic_prefix + "/rs_camera/right/color/image_raw";
-    rectify_topic_name = topic_prefix + "/rs_camera/rect/color/image_raw";
-    rectify_left_topic_name =
-        topic_prefix + "/rs_camera/left/rect/color/image_raw";
-    rectify_right_topic_name =
-        topic_prefix + "/rs_camera/right/rect/color/image_raw";
+    // RGB Rectify
+    rectify_topic_name = topic_name;
+    rectify_left_topic_name = left_topic_name;
+    rectify_right_topic_name = right_topic_name;
+
     pointcloud_topic_name = topic_prefix + "/rs_lidar/points";
     pointcloud_ac2_wave2_topic_name =
         topic_prefix + "/rs_lidar/ac2_wave2/points";
     imu_topic_name = topic_prefix + "/rs_imu";
+
+    // JPEG
     jpeg_topic_name = topic_prefix + "/rs_camera/color/image_raw/compressed";
     jpeg_left_topic_name =
         topic_prefix + "/rs_camera/left/color/image_raw/compressed";
     jpeg_right_topic_name =
         topic_prefix + "/rs_camera/right/color/image_raw/compressed";
-    jpeg_rectify_topic_name =
-        topic_prefix + "/rs_camera/rect/color/image_raw/compressed";
-    jpeg_rectify_left_topic_name =
-        topic_prefix + "/rs_camera/left/rect/color/image_raw/compressed";
-    jpeg_rectify_right_topic_name =
-        topic_prefix + "/rs_camera/right/rect/color/image_raw/compressed";
+
+    // JPEG Rectify
+    jpeg_rectify_topic_name = jpeg_topic_name;
+    jpeg_rectify_left_topic_name = jpeg_left_topic_name;
+    jpeg_rectify_right_topic_name = jpeg_right_topic_name;
+
     camera_info_topic_name = topic_prefix + "/rs_camera/color/camera_info";
     camera_info_left_topic_name =
         topic_prefix + "/rs_camera/left/color/camera_info";
     camera_info_right_topic_name =
         topic_prefix + "/rs_camera/right/color/camera_info";
     ac_device_calib_info_topic_name = topic_prefix + "/device_calib_info";
+    ac_device_factor_info_topic_name = topic_prefix + "/device_factor_info";
     return 0;
   }
 
@@ -985,31 +1099,34 @@ private:
     if (!enable_ros2_zero_copy) {
       if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
         if (enable_ac1_image_send) {
-          publisher_rgb = create_ros_publisher<ROS_IMAGE>(topic_name, 10);
           if (enable_rectify) {
             publisher_rgb_rectify =
                 create_ros_publisher<ROS_IMAGE>(rectify_topic_name, 10);
+          } else {
+            publisher_rgb = create_ros_publisher<ROS_IMAGE>(topic_name, 10);
           }
         } else {
           RS_SPDLOG_WARN("Disable AC1 Image Rgb Send By ROS2 !");
         }
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
         if (enable_ac2_left_image_send) {
-          publisher_rgb_left =
-              create_ros_publisher<ROS_IMAGE>(left_topic_name, 10);
           if (enable_rectify) {
             publisher_rgb_rectify_left =
                 create_ros_publisher<ROS_IMAGE>(rectify_left_topic_name, 10);
+          } else {
+            publisher_rgb_left =
+                create_ros_publisher<ROS_IMAGE>(left_topic_name, 10);
           }
         } else {
           RS_SPDLOG_WARN("Disable AC2 Left Image Rgb Send By ROS2 !");
         }
         if (enable_ac2_right_image_send) {
-          publisher_rgb_right =
-              create_ros_publisher<ROS_IMAGE>(right_topic_name, 10);
           if (enable_rectify) {
             publisher_rgb_rectify_right =
                 create_ros_publisher<ROS_IMAGE>(rectify_right_topic_name, 10);
+          } else {
+            publisher_rgb_right =
+                create_ros_publisher<ROS_IMAGE>(right_topic_name, 10);
           }
         } else {
           RS_SPDLOG_WARN("Disable AC2 Right Image Rgb Send By ROS2 !");
@@ -1030,12 +1147,13 @@ private:
     else {
       if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
         if (enable_ac1_image_send) {
-          publisher_rgb_loan =
-              create_ros_publisher<ROS_ZEROCOPY_IMAGE8M>(topic_name, 10);
           if (enable_rectify) {
             publisher_rgb_rectify_loan =
                 create_ros_publisher<ROS_ZEROCOPY_IMAGE8M>(rectify_topic_name,
                                                            10);
+          } else {
+            publisher_rgb_loan =
+                create_ros_publisher<ROS_ZEROCOPY_IMAGE8M>(topic_name, 10);
           }
         } else {
           RS_SPDLOG_WARN("Disable AC1 Image Rgb ZeroCopy Send By ROS2 !");
@@ -1049,23 +1167,26 @@ private:
         }
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
         if (enable_ac2_left_image_send) {
-          publisher_rgb_left_loan =
-              create_ros_publisher<ROS_ZEROCOPY_IMAGE4M>(left_topic_name, 10);
           if (enable_rectify) {
             publisher_rgb_rectify_left_loan =
                 create_ros_publisher<ROS_ZEROCOPY_IMAGE4M>(
                     rectify_left_topic_name, 10);
+          } else {
+            publisher_rgb_left_loan =
+                create_ros_publisher<ROS_ZEROCOPY_IMAGE4M>(left_topic_name, 10);
           }
         } else {
           RS_SPDLOG_WARN("Disable AC2 Left Image Rgb ZeroCopy Send By ROS2 !");
         }
         if (enable_ac2_right_image_send) {
-          publisher_rgb_right_loan =
-              create_ros_publisher<ROS_ZEROCOPY_IMAGE4M>(right_topic_name, 10);
           if (enable_rectify) {
             publisher_rgb_rectify_right_loan =
                 create_ros_publisher<ROS_ZEROCOPY_IMAGE4M>(
                     rectify_right_topic_name, 10);
+          } else {
+            publisher_rgb_right_loan =
+                create_ros_publisher<ROS_ZEROCOPY_IMAGE4M>(right_topic_name,
+                                                           10);
           }
         } else {
           RS_SPDLOG_WARN("Disable AC2 Right Image Rgb ZeroCopy Send By ROS2 !");
@@ -1093,48 +1214,40 @@ private:
     if (enable_jpeg) {
       if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
         if (enable_ac1_image_send) {
-          publisher_jpeg =
-              create_ros_publisher<ROS_COMPRESSED_IMAGE>(jpeg_topic_name, 10);
+          if (enable_rectify) {
+            publisher_jpeg_rectify = create_ros_publisher<ROS_COMPRESSED_IMAGE>(
+                jpeg_rectify_topic_name, 10);
+          } else {
+            publisher_jpeg =
+                create_ros_publisher<ROS_COMPRESSED_IMAGE>(jpeg_topic_name, 10);
+          }
         } else {
           RS_SPDLOG_WARN("Disable AC1 Image Jpeg Send By ROS2 !");
         }
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
         if (enable_ac2_left_image_send) {
-          publisher_jpeg_left = create_ros_publisher<ROS_COMPRESSED_IMAGE>(
-              jpeg_left_topic_name, 10);
+          if (enable_rectify) {
+            publisher_jpeg_rectify_left =
+                create_ros_publisher<ROS_COMPRESSED_IMAGE>(
+                    jpeg_rectify_left_topic_name, 10);
+          } else {
+            publisher_jpeg_left = create_ros_publisher<ROS_COMPRESSED_IMAGE>(
+                jpeg_left_topic_name, 10);
+          }
         } else {
           RS_SPDLOG_WARN("Disable AC2 Left Image Jpeg Send By ROS2 !");
         }
         if (enable_ac2_right_image_send) {
-          publisher_jpeg_right = create_ros_publisher<ROS_COMPRESSED_IMAGE>(
-              jpeg_right_topic_name, 10);
+          if (enable_rectify) {
+            publisher_jpeg_rectify_right =
+                create_ros_publisher<ROS_COMPRESSED_IMAGE>(
+                    jpeg_rectify_right_topic_name, 10);
+          } else {
+            publisher_jpeg_right = create_ros_publisher<ROS_COMPRESSED_IMAGE>(
+                jpeg_right_topic_name, 10);
+          }
         } else {
           RS_SPDLOG_WARN("Disable AC2 Right Image Jpeg Send By ROS2 !");
-        }
-      }
-    }
-    if (enable_rectify_jpeg) {
-      if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
-        if (enable_ac1_image_send) {
-          publisher_jpeg_rectify = create_ros_publisher<ROS_COMPRESSED_IMAGE>(
-              jpeg_rectify_topic_name, 10);
-        } else {
-          RS_SPDLOG_WARN("Disable AC1 Rectify Image Jpeg Send By ROS2 !");
-        }
-      } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
-        if (enable_ac2_left_image_send) {
-          publisher_jpeg_rectify_left =
-              create_ros_publisher<ROS_COMPRESSED_IMAGE>(
-                  jpeg_rectify_left_topic_name, 10);
-        } else {
-          RS_SPDLOG_WARN("Disable AC2 Rectify Left Image Jpeg Send By ROS2 !");
-        }
-        if (enable_ac2_right_image_send) {
-          publisher_jpeg_rectify_right =
-              create_ros_publisher<ROS_COMPRESSED_IMAGE>(
-                  jpeg_rectify_right_topic_name, 10);
-        } else {
-          RS_SPDLOG_WARN("Disable AC2 Rectify Right Image Jpeg Send By ROS2 !");
         }
       }
     }
@@ -1142,8 +1255,8 @@ private:
     return 0;
   }
 
-  int initImageBuffer() {
-    // 更新图像分辨率信息和初始化缓冲区
+  int initImageSize() {
+    // 更新图像分辨率信息
     if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
       image_width_rgb = image_width_ac1;
       image_height_rgb = image_height_ac1;
@@ -1183,6 +1296,11 @@ private:
         image_height_driver = image_gmsl_height_ac2_driver;
       }
     }
+    return 0;
+  }
+
+  int initImageBuffer() {
+    // 初始化缓冲区
     // Non-Crop Case
     nv12_image_size = robosense::color::ColorCodec::NV12ImageSize(
         image_width_rgb, image_height_rgb);
@@ -1198,6 +1316,15 @@ private:
       rgb_buf.resize(rgb_image_size, 0);
       crop_rgb_buf.resize(rgb_image_size, 0);
     } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
+      if (ac2_hardware_type == RS_AC2_HARDWARE_TYPE::RS_AC2_HARDWARE_A0) {
+        ac2_left_crop_config = ac2_a0_left_crop_config;
+        ac2_right_crop_config = ac2_a0_right_crop_config;
+      } else if (ac2_hardware_type ==
+                 RS_AC2_HARDWARE_TYPE::RS_AC2_HARDWARE_A1) {
+        ac2_left_crop_config = ac2_a1_left_crop_config;
+        ac2_right_crop_config = ac2_a1_right_crop_config;
+      }
+
       if (ac2_left_crop_config.getCropWidth() !=
               ac2_right_crop_config.getCropWidth() ||
           ac2_left_crop_config.getCropHeight() !=
@@ -1290,7 +1417,84 @@ private:
 
   int initJpegEncoder() {
     int ret = 0;
-    if (enable_jpeg) {
+    if (enable_jpeg && enable_rectify) {
+      robosense::jpeg::JpegCodesConfig config;
+      config.coderType = robosense::jpeg::JPEG_CODER_TYPE::RS_JPEG_CODER_ENCODE;
+      config.jpegQuality = jpeg_quality;
+      config.gpuDeviceId = 0;
+      config.imageFrameFormat = robosense::common::FRAME_FORMAT_RGB24;
+
+      if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
+        config.imageWidth = image_crop_width_rgb;
+        config.imageHeight = image_crop_height_rgb;
+        // AC1
+        try {
+          jpeg_rectify_encoder_ptr.reset(new robosense::jpeg::JpegCoder());
+        } catch (...) {
+          RS_SPDLOG_ERROR("Malloc AC1 Rectify Jpeg Encoder Failed !");
+          return -1;
+        }
+
+        ret = jpeg_rectify_encoder_ptr->init(config);
+        if (ret != 0) {
+          RS_SPDLOG_ERROR("Initial AC1 Rectify Jpeg Encoder Failed: ret = " +
+                          std::to_string(ret));
+          return -2;
+        }
+      } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
+        // Left
+        if (ac2_hardware_type == RS_AC2_HARDWARE_TYPE::RS_AC2_HARDWARE_A0) {
+          config.imageWidth = image_left_crop_width_rgb;
+          config.imageHeight = image_left_crop_height_rgb;
+        } else if (ac2_hardware_type ==
+                   RS_AC2_HARDWARE_TYPE::RS_AC2_HARDWARE_A1) {
+          config.imageWidth = image_ac_rectify_width;
+          config.imageHeight = image_ac_rectify_height;
+        }
+
+        try {
+          jpeg_rectify_left_encoder_ptr.reset(new robosense::jpeg::JpegCoder());
+        } catch (...) {
+          RS_SPDLOG_ERROR("Malloc AC2 Rectify Jpeg Left Encoder Failed !");
+          return -3;
+        }
+
+        ret = jpeg_rectify_left_encoder_ptr->init(config);
+        if (ret != 0) {
+          RS_SPDLOG_ERROR(
+              "Initial AC2 Rectify Jpeg Left Encoder Failed: ret = " +
+              std::to_string(ret));
+          return -4;
+        }
+
+        // Right
+        if (ac2_hardware_type == RS_AC2_HARDWARE_TYPE::RS_AC2_HARDWARE_A0) {
+          config.imageWidth = image_right_crop_width_rgb;
+          config.imageHeight = image_right_crop_height_rgb;
+        } else if (ac2_hardware_type ==
+                   RS_AC2_HARDWARE_TYPE::RS_AC2_HARDWARE_A1) {
+          config.imageWidth = image_ac_rectify_width;
+          config.imageHeight = image_ac_rectify_height;
+        }
+        try {
+          jpeg_rectify_right_encoder_ptr.reset(
+              new robosense::jpeg::JpegCoder());
+        } catch (...) {
+          RS_SPDLOG_ERROR("Malloc AC2 Rectify Jpeg Right Encoder Failed !");
+          return -5;
+        }
+
+        ret = jpeg_rectify_right_encoder_ptr->init(config);
+        if (ret != 0) {
+          RS_SPDLOG_ERROR(
+              "Initial AC2 Rectify Jpeg Right Encoder Failed: ret = " +
+              std::to_string(ret));
+          return -6;
+        }
+      }
+      RS_SPDLOG_INFO(
+          "Enable Rectify Jpeg: Create Rectify Jpeg Encoder(s) Successed !");
+    } else if (enable_jpeg) {
       robosense::jpeg::JpegCodesConfig config;
       config.coderType = robosense::jpeg::JPEG_CODER_TYPE::RS_JPEG_CODER_ENCODE;
       config.jpegQuality = jpeg_quality;
@@ -1354,80 +1558,20 @@ private:
       RS_SPDLOG_INFO("Disable Jpeg: Not Need Create Jpeg Encoder(s) !");
     }
 
-    if (enable_rectify_jpeg) {
-      robosense::jpeg::JpegCodesConfig config;
-      config.coderType = robosense::jpeg::JPEG_CODER_TYPE::RS_JPEG_CODER_ENCODE;
-      config.jpegQuality = jpeg_quality;
-      config.gpuDeviceId = 0;
-      config.imageFrameFormat = robosense::common::FRAME_FORMAT_RGB24;
-
-      if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
-        config.imageWidth = image_crop_width_rgb;
-        config.imageHeight = image_crop_height_rgb;
-        // AC1
-        try {
-          jpeg_rectify_encoder_ptr.reset(new robosense::jpeg::JpegCoder());
-        } catch (...) {
-          RS_SPDLOG_ERROR("Malloc AC1 Rectify Jpeg Encoder Failed !");
-          return -1;
-        }
-
-        ret = jpeg_rectify_encoder_ptr->init(config);
-        if (ret != 0) {
-          RS_SPDLOG_ERROR("Initial AC1 Rectify Jpeg Encoder Failed: ret = " +
-                          std::to_string(ret));
-          return -2;
-        }
-      } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
-        // Left
-        config.imageWidth = image_left_crop_width_rgb;
-        config.imageHeight = image_left_crop_height_rgb;
-        try {
-          jpeg_rectify_left_encoder_ptr.reset(new robosense::jpeg::JpegCoder());
-        } catch (...) {
-          RS_SPDLOG_ERROR("Malloc AC2 Rectify Jpeg Left Encoder Failed !");
-          return -3;
-        }
-
-        ret = jpeg_rectify_left_encoder_ptr->init(config);
-        if (ret != 0) {
-          RS_SPDLOG_ERROR(
-              "Initial AC2 Rectify Jpeg Left Encoder Failed: ret = " +
-              std::to_string(ret));
-          return -4;
-        }
-
-        // Right
-        config.imageWidth = image_right_crop_width_rgb;
-        config.imageHeight = image_right_crop_height_rgb;
-        try {
-          jpeg_rectify_right_encoder_ptr.reset(
-              new robosense::jpeg::JpegCoder());
-        } catch (...) {
-          RS_SPDLOG_ERROR("Malloc AC2 Rectify Jpeg Right Encoder Failed !");
-          return -5;
-        }
-
-        ret = jpeg_rectify_right_encoder_ptr->init(config);
-        if (ret != 0) {
-          RS_SPDLOG_ERROR(
-              "Initial AC2 Rectify Jpeg Right Encoder Failed: ret = " +
-              std::to_string(ret));
-          return -6;
-        }
-      }
-      RS_SPDLOG_INFO(
-          "Enable Rectify Jpeg: Create Rectify Jpeg Encoder(s) Successed !");
-    } else {
-      RS_SPDLOG_INFO(
-          "Disable Rectify Jpeg: Not Need Create Rectify Jpeg Encoder(s) !");
-    }
-
     return 0;
   }
 
   int stopJpegEncoder() {
-    if (enable_jpeg) {
+    if (enable_jpeg && enable_rectify) {
+      if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
+        jpeg_rectify_encoder_ptr.reset();
+      } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
+        jpeg_rectify_left_encoder_ptr.reset();
+        jpeg_rectify_right_encoder_ptr.reset();
+      }
+      RS_SPDLOG_INFO(
+          "Enable Rectify Jpeg: Stop Rectify Jpeg Encoder(s) Successed !");
+    } else if (enable_jpeg) {
       if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
         jpeg_encoder_ptr.reset();
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
@@ -1437,20 +1581,6 @@ private:
       RS_SPDLOG_INFO("Enable Jpeg: Stop Jpeg Encoder(s) Successed !");
     } else {
       RS_SPDLOG_INFO("Disable Jpeg: Not Need Stop Jpeg Encoder(s) !");
-    }
-
-    if (enable_rectify_jpeg) {
-      if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
-        jpeg_rectify_encoder_ptr.reset();
-      } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
-        jpeg_rectify_left_encoder_ptr.reset();
-        jpeg_rectify_right_encoder_ptr.reset();
-      }
-      RS_SPDLOG_INFO(
-          "Enable Rectify Jpeg: Stop Rectify Jpeg Encoder(s) Successed !");
-    } else {
-      RS_SPDLOG_INFO(
-          "Disable Rectify Jpeg: Not Need Stop Rectify Jpeg Encoder(s) !");
     }
 
     return 0;
@@ -1502,6 +1632,17 @@ private:
           return -1;
         }
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
+        try {
+          is_rgb_rectify_both_running_ = true;
+          rgb_rectify_both_thread_ptr.reset(new std::thread(
+              &MSPublisher::rgbRectifyBothProcessWorkThread, this));
+        } catch (...) {
+          is_rgb_rectify_both_running_ = false;
+          RS_SPDLOG_ERROR(
+              "Malloc AC2 Rgb Rectify Both Work Thread(s) Failed !");
+          return -2;
+        }
+
         try {
           is_rgb_rectify_left_running_ = true;
           rgb_rectify_left_thread_ptr.reset(new std::thread(
@@ -1594,6 +1735,20 @@ private:
         }
         RS_SPDLOG_INFO("Stop AC1 Rgb Rectify Work Thread(s) Successed !");
       } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
+        // both rgb
+        if (is_rgb_rectify_both_running_) {
+          {
+            std::lock_guard<std::mutex> lock(rgb_rectify_both_mutex_);
+            is_rgb_rectify_both_running_ = false;
+            rgb_rectify_both_condition_.notify_all();
+          }
+          if (rgb_rectify_both_thread_ptr &&
+              rgb_rectify_both_thread_ptr->joinable()) {
+            rgb_rectify_both_thread_ptr->join();
+          }
+          rgb_rectify_both_thread_ptr.reset();
+        }
+
         // left rgb
         if (is_rgb_rectify_left_running_) {
           {
@@ -1659,7 +1814,42 @@ private:
   }
 
   int initJpegWorkThreads() {
-    if (enable_jpeg) {
+
+    if (enable_jpeg && enable_rectify) {
+      if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
+        try {
+          is_jpeg_rectify_running_ = true;
+          jpeg_rectify_thread_ptr.reset(new std::thread(
+              &MSPublisher::jpegRectifyProcessWorkThread, this));
+        } catch (...) {
+          is_jpeg_rectify_running_ = false;
+          RS_SPDLOG_ERROR("Malloc AC1 Rectify Jpeg Work Thread Failed !");
+          return -1;
+        }
+      } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
+        try {
+          is_jpeg_rectify_left_running_ = true;
+          jpeg_rectify_left_thread_ptr.reset(new std::thread(
+              &MSPublisher::jpegRectifyLeftProcessWorkThread, this));
+        } catch (...) {
+          is_jpeg_rectify_left_running_ = false;
+          RS_SPDLOG_ERROR("Malloc AC2 Rectify Jpeg Left Work Thread Failed !");
+          return -2;
+        }
+
+        try {
+          is_jpeg_rectify_right_running_ = true;
+          jpeg_rectify_right_thread_ptr.reset(new std::thread(
+              &MSPublisher::jpegRectifyRightProcessWorkThread, this));
+        } catch (...) {
+          is_jpeg_rectify_right_running_ = false;
+          RS_SPDLOG_ERROR("Malloc AC2 Rectify Jpeg Right Work Thread Failed !");
+          return -3;
+        }
+      }
+      RS_SPDLOG_INFO("Enable Rectify Jpeg: Create Rectify Jpeg Work Thread(s) "
+                     "Successed !");
+    } else if (enable_jpeg) {
       if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
         try {
           is_jpeg_running_ = true;
@@ -1696,91 +1886,12 @@ private:
       RS_SPDLOG_INFO("Disable Jpeg: Not Need Create Jpeg Work Thread(s) !");
     }
 
-    if (enable_rectify_jpeg) {
-      if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
-        try {
-          is_jpeg_rectify_running_ = true;
-          jpeg_rectify_thread_ptr.reset(new std::thread(
-              &MSPublisher::jpegRectifyProcessWorkThread, this));
-        } catch (...) {
-          is_jpeg_rectify_running_ = false;
-          RS_SPDLOG_ERROR("Malloc AC1 Rectify Jpeg Work Thread Failed !");
-          return -1;
-        }
-      } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
-        try {
-          is_jpeg_rectify_left_running_ = true;
-          jpeg_rectify_left_thread_ptr.reset(new std::thread(
-              &MSPublisher::jpegRectifyLeftProcessWorkThread, this));
-        } catch (...) {
-          is_jpeg_rectify_left_running_ = false;
-          RS_SPDLOG_ERROR("Malloc AC2 Rectify Jpeg Left Work Thread Failed !");
-          return -2;
-        }
-
-        try {
-          is_jpeg_rectify_right_running_ = true;
-          jpeg_rectify_right_thread_ptr.reset(new std::thread(
-              &MSPublisher::jpegRectifyRightProcessWorkThread, this));
-        } catch (...) {
-          is_jpeg_rectify_right_running_ = false;
-          RS_SPDLOG_ERROR("Malloc AC2 Rectify Jpeg Right Work Thread Failed !");
-          return -3;
-        }
-      }
-      RS_SPDLOG_INFO("Enable Rectify Jpeg: Create Rectify Jpeg Work Thread(s) "
-                     "Successed !");
-    } else {
-      RS_SPDLOG_INFO("Disable Rectify Jpeg: Not Need Create Rectify Jpeg Work "
-                     "Thread(s) !");
-    }
-
     return 0;
   }
 
   int stopJpegWorkThreads() {
-    if (enable_jpeg) {
-      if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
-        // ac1 jpeg
-        {
-          std::lock_guard<std::mutex> lock(jpeg_mutex_);
-          is_jpeg_running_ = false;
-          jpeg_condition_.notify_all();
-        }
-        if (jpeg_thread_ptr && jpeg_thread_ptr->joinable()) {
-          jpeg_thread_ptr->join();
-        }
-        jpeg_thread_ptr.reset();
-        RS_SPDLOG_INFO("Stop AC1 Jpeg Work Thread(s) Successed !");
-      } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
-        // left jpeg
-        {
-          std::lock_guard<std::mutex> lock(jpeg_left_mutex_);
-          is_jpeg_left_running_ = false;
-          jpeg_left_condition_.notify_all();
-        }
-        if (jpeg_left_thread_ptr && jpeg_left_thread_ptr->joinable()) {
-          jpeg_left_thread_ptr->join();
-        }
-        jpeg_left_thread_ptr.reset();
 
-        // right jpeg
-        {
-          std::lock_guard<std::mutex> lg(jpeg_right_mutex_);
-          is_jpeg_right_running_ = false;
-          jpeg_right_condition_.notify_all();
-        }
-        if (jpeg_right_thread_ptr && jpeg_right_thread_ptr->joinable()) {
-          jpeg_right_thread_ptr->join();
-        }
-        jpeg_right_thread_ptr.reset();
-      }
-      RS_SPDLOG_INFO("Stop AC2 Jpeg Work Thread(s) Successed !");
-    } else {
-      RS_SPDLOG_INFO("Disable Jpeg: Not Need Stop Jpeg Work Thread(s) !");
-    }
-
-    if (enable_rectify_jpeg) {
+    if (enable_jpeg && enable_rectify) {
       if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
         // ac1 jpeg
         {
@@ -1819,9 +1930,45 @@ private:
         jpeg_rectify_right_thread_ptr.reset();
       }
       RS_SPDLOG_INFO("Stop AC2 Rectify Jpeg Work Thread(s) Successed !");
+    } else if (enable_jpeg) {
+      if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
+        // ac1 jpeg
+        {
+          std::lock_guard<std::mutex> lock(jpeg_mutex_);
+          is_jpeg_running_ = false;
+          jpeg_condition_.notify_all();
+        }
+        if (jpeg_thread_ptr && jpeg_thread_ptr->joinable()) {
+          jpeg_thread_ptr->join();
+        }
+        jpeg_thread_ptr.reset();
+        RS_SPDLOG_INFO("Stop AC1 Jpeg Work Thread(s) Successed !");
+      } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
+        // left jpeg
+        {
+          std::lock_guard<std::mutex> lock(jpeg_left_mutex_);
+          is_jpeg_left_running_ = false;
+          jpeg_left_condition_.notify_all();
+        }
+        if (jpeg_left_thread_ptr && jpeg_left_thread_ptr->joinable()) {
+          jpeg_left_thread_ptr->join();
+        }
+        jpeg_left_thread_ptr.reset();
+
+        // right jpeg
+        {
+          std::lock_guard<std::mutex> lg(jpeg_right_mutex_);
+          is_jpeg_right_running_ = false;
+          jpeg_right_condition_.notify_all();
+        }
+        if (jpeg_right_thread_ptr && jpeg_right_thread_ptr->joinable()) {
+          jpeg_right_thread_ptr->join();
+        }
+        jpeg_right_thread_ptr.reset();
+      }
+      RS_SPDLOG_INFO("Stop AC2 Jpeg Work Thread(s) Successed !");
     } else {
-      RS_SPDLOG_INFO(
-          "Disable Rectify Jpeg: Not Need Stop Rectify Jpeg Work Thread(s) !");
+      RS_SPDLOG_INFO("Disable Jpeg: Not Need Stop Jpeg Work Thread(s) !");
     }
 
     return 0;
@@ -1969,49 +2116,13 @@ private:
       return -2;
     }
 
-    // Initial Image Buffer(s)
-    ret = initImageBuffer();
+    // Initial Image Size
+    ret = initImageSize();
     if (ret != 0) {
       RS_SPDLOG_ERROR(
           "Found Device uuid = " + uuid +
-          ", Initial Image Buffer Failed: ret = " + std::to_string(ret));
+          ", Initial Image Size Failed: ret = " + std::to_string(ret));
       return -3;
-    }
-
-    // Initial Rgb Codec
-    ret = initRgbCodec();
-    if (ret != 0) {
-      RS_SPDLOG_ERROR(
-          "Found Device uuid = " + uuid +
-          ", Initial Rgb Codec(s) Failed: ret = " + std::to_string(ret));
-      return -4;
-    }
-
-    // Initial Rgb Thread(s)
-    ret = initRgbWorkThreads();
-    if (ret != 0) {
-      RS_SPDLOG_ERROR(
-          "Found Device uuid = " + uuid +
-          ", Initial Rgb Work Thread(s) Failed: ret = " + std::to_string(ret));
-      return -5;
-    }
-
-    // Initial Jpeg Encoder
-    ret = initJpegEncoder();
-    if (ret != 0) {
-      RS_SPDLOG_ERROR(
-          "Found Device uuid = " + uuid +
-          ", Initial Jpeg Encoder(s) Failed: ret = " + std::to_string(ret));
-      return -6;
-    }
-
-    // Initial Jpeg Thread(s)
-    ret = initJpegWorkThreads();
-    if (ret != 0) {
-      RS_SPDLOG_ERROR(
-          "Found Device uuid = " + uuid +
-          ", Initial Jpeg Work Thread(s) Failed: ret = " + std::to_string(ret));
-      return -7;
     }
 
     // 检查输入数据帧率
@@ -2025,7 +2136,7 @@ private:
     if (ret != 0) {
       RS_SPDLOG_ERROR("Device uuid = " + uuid +
                       " Open Device Failed: ret = " + std::to_string(ret));
-      return -8;
+      return -4;
     }
 
     {
@@ -2034,13 +2145,114 @@ private:
       RS_SPDLOG_INFO("Device uuid = " + uuid + " Open Successed !");
     }
 
+    // 如果AC2 则判断硬件版本
+    int32_t max_retry_count = 10;
+    int32_t hardware_ver = -1;
+    bool is_get_ac2_hardware_type = false;
+    if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
+      // TODO 增加获取AC2 硬件版本处理
+      do {
+        --max_retry_count;
+        robosense::lidar::DeviceInfo device_info;
+        bool isSuccess = device_manager_ptr->getDeviceInfo(uuid, device_info);
+        if (!isSuccess) {
+          RS_SPDLOG_WARN(
+              "Device uuid = " + uuid +
+              " Get Device Info Failed: ret = " + std::to_string(ret));
+          std::this_thread::sleep_for(std::chrono::seconds(1));
+          continue;
+        } else {
+          hardware_ver = device_info.hardware_ver;
+          std::cout << "hardware_ver = " << hardware_ver << std::endl;
+          if (hardware_ver == 0) {
+            is_get_ac2_hardware_type = true;
+            ac2_hardware_type = RS_AC2_HARDWARE_TYPE::RS_AC2_HARDWARE_A0;
+          } else if (hardware_ver == 1) {
+            is_get_ac2_hardware_type = true;
+            ac2_hardware_type = RS_AC2_HARDWARE_TYPE::RS_AC2_HARDWARE_A1;
+          } else {
+            RS_SPDLOG_ERROR("Device uuid = " + uuid +
+                            " Get Hardware Version = " +
+                            std::to_string(hardware_ver) + " Not Support !");
+          }
+          if (is_get_ac2_hardware_type) {
+            break;
+          }
+        }
+      } while (max_retry_count >= 0);
+      if (!is_get_ac2_hardware_type) {
+        RS_SPDLOG_ERROR("Device uuid = " + uuid +
+                        " Can Not Get Hardware Version !");
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+        throw std::runtime_error("Can Not Get AC2 Hardware Version");
+      } else {
+        RS_SPDLOG_INFO(
+            "Device uuid = " + uuid + " Get AC2 Hardware Version Is = " +
+            RSAC2HardwareTypeUtil::ac2HardwareTypeToString(ac2_hardware_type));
+      }
+    }
+
+    // Initial Image Buffer(s)
+    ret = initImageBuffer();
+    if (ret != 0) {
+      RS_SPDLOG_ERROR(
+          "Found Device uuid = " + uuid +
+          ", Initial Image Buffer Failed: ret = " + std::to_string(ret));
+      return -5;
+    }
+
+    // Initial Rgb Codec
+    ret = initRgbCodec();
+    if (ret != 0) {
+      RS_SPDLOG_ERROR(
+          "Found Device uuid = " + uuid +
+          ", Initial Rgb Codec(s) Failed: ret = " + std::to_string(ret));
+      return -6;
+    }
+
+    // Initial Rgb Thread(s)
+    ret = initRgbWorkThreads();
+    if (ret != 0) {
+      RS_SPDLOG_ERROR(
+          "Found Device uuid = " + uuid +
+          ", Initial Rgb Work Thread(s) Failed: ret = " + std::to_string(ret));
+      return -7;
+    }
+
+    // Initial Jpeg Encoder
+    ret = initJpegEncoder();
+    if (ret != 0) {
+      RS_SPDLOG_ERROR(
+          "Found Device uuid = " + uuid +
+          ", Initial Jpeg Encoder(s) Failed: ret = " + std::to_string(ret));
+      return -8;
+    }
+
+    // Initial Jpeg Thread(s)
+    ret = initJpegWorkThreads();
+    if (ret != 0) {
+      RS_SPDLOG_ERROR(
+          "Found Device uuid = " + uuid +
+          ", Initial Jpeg Work Thread(s) Failed: ret = " + std::to_string(ret));
+      return -9;
+    }
+
     // Initial Device Calibration Info Thread
     ret = initDeviceCalibInfoWorkThread();
     if (ret != 0) {
       RS_SPDLOG_ERROR("Found Device uuid = " + uuid +
                       ", Initial Device Calib Info Thread Failed: ret = " +
                       std::to_string(ret));
-      return -9;
+      return -10;
+    }
+
+    // Stop Pause Device
+    ret = device_manager_ptr->pauseDevice(uuid, false);
+    if (ret != 0) {
+      RS_SPDLOG_ERROR(
+          "Found Device uuid = " + uuid +
+          ", Stop Pause Device Failed: ret = " + std::to_string(ret));
+      return -11;
     }
 
     return 0;
@@ -2871,285 +3083,288 @@ private:
     }
 
     // Publish ROS/ROS2 RGB Image Message
-    if (!enable_ros2_zero_copy) {
-      auto rgb_msg = MAKE_SHARED_ROS_IMAGE;
-      // 构造Ros/Ros2 消息
-      ret = robosense::convert::RSConvertManager::toRosImageMessage(
-          rgb_image_data_width, rgb_image_data_height, custom_time,
-          rgb_image_data_frame_id, rgb_data_buf, rgb_image_data_size, rgb_msg);
-      if (ret != 0) {
-        RS_SPDLOG_ERROR(
-            "Convert To ROS/ROS2 Message Failed: rgb_image_data_frame_id = " +
-            rgb_image_data_frame_id);
-        return;
-      }
-
-      // 发送Ros/Ros2 消息
-      robosense::device::RS_CHANNEL_ID_TYPE channel_id =
-          robosense::device::RS_CHANNEL_ID_TYPE::RS_CHANNEL_ID_RGB_IMAGE;
-      switch (image_source_type) {
-      case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC1: {
-        timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-        if (camera_info_ptr) {
-          ROS_CAMERAINFO camera_info = *camera_info_ptr;
-          camera_info.header = rgb_msg->header;
-          publisher_camera_info->publish(camera_info);
-        }
-        publisher_rgb->publish(std::move(*rgb_msg));
-        channel_id =
-            robosense::device::RS_CHANNEL_ID_TYPE::RS_CHANNEL_ID_RGB_IMAGE;
-        break;
-      }
-      case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
-        timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-        if (left_camera_info_ptr) {
-          ROS_CAMERAINFO camera_info = *left_camera_info_ptr;
-          camera_info.header = rgb_msg->header;
-          publisher_left_camera_info->publish(camera_info);
-        }
-        publisher_rgb_left->publish(std::move(*rgb_msg));
-        channel_id =
-            robosense::device::RS_CHANNEL_ID_TYPE::RS_CHANNEL_ID_RGB_LEFT_IMAGE;
-        break;
-      }
-      case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
-        timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-        if (right_camera_info_ptr) {
-          ROS_CAMERAINFO camera_info = *right_camera_info_ptr;
-          camera_info.header = rgb_msg->header;
-          publisher_right_camera_info->publish(camera_info);
-        }
-        publisher_rgb_right->publish(std::move(*rgb_msg));
-        channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
-            RS_CHANNEL_ID_RGB_RIGHT_IMAGE;
-        break;
-      }
-      } // switch
-      timestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
-      if (timestamp_manager_ptr) {
-        timestampPtr->channel_id = channel_id;
-        timestamp_manager_ptr->addTimestamp(timestampPtr);
-      }
-    }
-#if defined(ROS2_FOUND)
-    else if (enable_ros2_zero_copy) {
-      switch (image_source_type) {
-      case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC1: {
-        rclcpp::LoanedMessage<ROS_ZEROCOPY_IMAGE8M> loanedMsg =
-            publisher_rgb_loan->borrow_loaned_message();
-        if (!loanedMsg.is_valid()) {
-          // 获取消息失败，丢弃该消息
-          RS_SPDLOG_ERROR("Failed to get AC1 Rgb LoanMessage !");
+    if (!enable_rectify) {
+      if (!enable_ros2_zero_copy) {
+        auto rgb_msg = MAKE_SHARED_ROS_IMAGE;
+        // 构造Ros/Ros2 消息
+        ret = robosense::convert::RSConvertManager::toRosImageMessage(
+            rgb_image_data_width, rgb_image_data_height, custom_time,
+            rgb_image_data_frame_id, rgb_data_buf, rgb_image_data_size,
+            rgb_msg);
+        if (ret != 0) {
+          RS_SPDLOG_ERROR(
+              "Convert To ROS/ROS2 Message Failed: rgb_image_data_frame_id = " +
+              rgb_image_data_frame_id);
           return;
         }
-        // 引用方式获取实际的消息
-        auto &msg = loanedMsg.get();
-        auto rgb_msg = &msg;
-        // 构造零拷贝消息
-        robosense::convert::RSConvertManager::toZeroCopyImageMessage<
-            ROS_ZEROCOPY_IMAGE8M>(rgb_image_data_width, rgb_image_data_height,
-                                  custom_time, rgb_image_data_frame_id,
-                                  rgb_data_buf, rgb_image_data_size, rgb_msg);
 
-        timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-        if (camera_info_ptr) {
-          ROS_CAMERAINFO camera_info = *camera_info_ptr;
-          camera_info.header.stamp = rgb_msg->header.stamp;
-          camera_info.header.frame_id = rgb_image_data_frame_id;
-          publisher_camera_info->publish(camera_info);
+        // 发送Ros/Ros2 消息
+        robosense::device::RS_CHANNEL_ID_TYPE channel_id =
+            robosense::device::RS_CHANNEL_ID_TYPE::RS_CHANNEL_ID_RGB_IMAGE;
+        switch (image_source_type) {
+        case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC1: {
+          timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
+          if (camera_info_ptr) {
+            ROS_CAMERAINFO camera_info = *camera_info_ptr;
+            camera_info.header = rgb_msg->header;
+            publisher_camera_info->publish(camera_info);
+          }
+          publisher_rgb->publish(std::move(*rgb_msg));
+          channel_id =
+              robosense::device::RS_CHANNEL_ID_TYPE::RS_CHANNEL_ID_RGB_IMAGE;
+          break;
         }
-        publisher_rgb_loan->publish(std::move(*rgb_msg));
+        case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
+          timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
+          if (left_camera_info_ptr) {
+            ROS_CAMERAINFO camera_info = *left_camera_info_ptr;
+            camera_info.header = rgb_msg->header;
+            publisher_left_camera_info->publish(camera_info);
+          }
+          publisher_rgb_left->publish(std::move(*rgb_msg));
+          channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
+              RS_CHANNEL_ID_RGB_LEFT_IMAGE;
+          break;
+        }
+        case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
+          timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
+          if (right_camera_info_ptr) {
+            ROS_CAMERAINFO camera_info = *right_camera_info_ptr;
+            camera_info.header = rgb_msg->header;
+            publisher_right_camera_info->publish(camera_info);
+          }
+          publisher_rgb_right->publish(std::move(*rgb_msg));
+          channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
+              RS_CHANNEL_ID_RGB_RIGHT_IMAGE;
+          break;
+        }
+        } // switch
         timestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
         if (timestamp_manager_ptr) {
-          timestampPtr->channel_id =
-              robosense::device::RS_CHANNEL_ID_TYPE::RS_CHANNEL_ID_RGB_IMAGE;
+          timestampPtr->channel_id = channel_id;
           timestamp_manager_ptr->addTimestamp(timestampPtr);
         }
-        break;
       }
-      case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
-        rclcpp::LoanedMessage<ROS_ZEROCOPY_IMAGE4M> loanedMsg =
-            publisher_rgb_left_loan->borrow_loaned_message();
-        if (!loanedMsg.is_valid()) {
-          // 获取消息失败，丢弃该消息
-          RS_SPDLOG_ERROR("Failed to get AC2 Rgb Left LoanMessage !");
-          return;
-        }
-        // 引用方式获取实际的消息
-        auto &msg = loanedMsg.get();
-        auto rgb_msg = &msg;
+#if defined(ROS2_FOUND)
+      else if (enable_ros2_zero_copy) {
+        switch (image_source_type) {
+        case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC1: {
+          rclcpp::LoanedMessage<ROS_ZEROCOPY_IMAGE8M> loanedMsg =
+              publisher_rgb_loan->borrow_loaned_message();
+          if (!loanedMsg.is_valid()) {
+            // 获取消息失败，丢弃该消息
+            RS_SPDLOG_ERROR("Failed to get AC1 Rgb LoanMessage !");
+            return;
+          }
+          // 引用方式获取实际的消息
+          auto &msg = loanedMsg.get();
+          auto rgb_msg = &msg;
+          // 构造零拷贝消息
+          robosense::convert::RSConvertManager::toZeroCopyImageMessage<
+              ROS_ZEROCOPY_IMAGE8M>(rgb_image_data_width, rgb_image_data_height,
+                                    custom_time, rgb_image_data_frame_id,
+                                    rgb_data_buf, rgb_image_data_size, rgb_msg);
 
-        // 构造零拷贝消息
-        robosense::convert::RSConvertManager::toZeroCopyImageMessage<
-            ROS_ZEROCOPY_IMAGE4M>(rgb_image_data_width, rgb_image_data_height,
-                                  custom_time, rgb_image_data_frame_id,
-                                  rgb_data_buf, rgb_image_data_size, rgb_msg);
-
-        timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-        if (left_camera_info_ptr) {
-          ROS_CAMERAINFO camera_info = *left_camera_info_ptr;
-          camera_info.header.stamp = rgb_msg->header.stamp;
-          camera_info.header.frame_id = rgb_image_data_frame_id;
-          publisher_left_camera_info->publish(camera_info);
+          timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
+          if (camera_info_ptr) {
+            ROS_CAMERAINFO camera_info = *camera_info_ptr;
+            camera_info.header.stamp = rgb_msg->header.stamp;
+            camera_info.header.frame_id = rgb_image_data_frame_id;
+            publisher_camera_info->publish(camera_info);
+          }
+          publisher_rgb_loan->publish(std::move(*rgb_msg));
+          timestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
+          if (timestamp_manager_ptr) {
+            timestampPtr->channel_id =
+                robosense::device::RS_CHANNEL_ID_TYPE::RS_CHANNEL_ID_RGB_IMAGE;
+            timestamp_manager_ptr->addTimestamp(timestampPtr);
+          }
+          break;
         }
-        publisher_rgb_left_loan->publish(std::move(*rgb_msg));
+        case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
+          rclcpp::LoanedMessage<ROS_ZEROCOPY_IMAGE4M> loanedMsg =
+              publisher_rgb_left_loan->borrow_loaned_message();
+          if (!loanedMsg.is_valid()) {
+            // 获取消息失败，丢弃该消息
+            RS_SPDLOG_ERROR("Failed to get AC2 Rgb Left LoanMessage !");
+            return;
+          }
+          // 引用方式获取实际的消息
+          auto &msg = loanedMsg.get();
+          auto rgb_msg = &msg;
+
+          // 构造零拷贝消息
+          robosense::convert::RSConvertManager::toZeroCopyImageMessage<
+              ROS_ZEROCOPY_IMAGE4M>(rgb_image_data_width, rgb_image_data_height,
+                                    custom_time, rgb_image_data_frame_id,
+                                    rgb_data_buf, rgb_image_data_size, rgb_msg);
+
+          timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
+          if (left_camera_info_ptr) {
+            ROS_CAMERAINFO camera_info = *left_camera_info_ptr;
+            camera_info.header.stamp = rgb_msg->header.stamp;
+            camera_info.header.frame_id = rgb_image_data_frame_id;
+            publisher_left_camera_info->publish(camera_info);
+          }
+          publisher_rgb_left_loan->publish(std::move(*rgb_msg));
+          timestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
+          if (timestamp_manager_ptr) {
+            timestampPtr->channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
+                RS_CHANNEL_ID_RGB_LEFT_IMAGE;
+            timestamp_manager_ptr->addTimestamp(timestampPtr);
+          }
+          break;
+        }
+        case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
+          rclcpp::LoanedMessage<ROS_ZEROCOPY_IMAGE4M> loanedMsg =
+              publisher_rgb_right_loan->borrow_loaned_message();
+          if (!loanedMsg.is_valid()) {
+            // 获取消息失败，丢弃该消息
+            RS_SPDLOG_ERROR("Failed to get AC2 Rgb Right LoanMessage !");
+            return;
+          }
+          // 引用方式获取实际的消息
+          auto &msg = loanedMsg.get();
+          auto rgb_msg = &msg;
+
+          // 构造零拷贝消息
+          robosense::convert::RSConvertManager::toZeroCopyImageMessage<
+              ROS_ZEROCOPY_IMAGE4M>(rgb_image_data_width, rgb_image_data_height,
+                                    custom_time, rgb_image_data_frame_id,
+                                    rgb_data_buf, rgb_image_data_size, rgb_msg);
+
+          timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
+          if (right_camera_info_ptr) {
+            ROS_CAMERAINFO camera_info = *right_camera_info_ptr;
+            camera_info.header.stamp = rgb_msg->header.stamp;
+            camera_info.header.frame_id = rgb_image_data_frame_id;
+            publisher_right_camera_info->publish(camera_info);
+          }
+          publisher_rgb_right_loan->publish(std::move(*rgb_msg));
+
+          break;
+        }
+        } // switch
         timestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
         if (timestamp_manager_ptr) {
           timestampPtr->channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
-              RS_CHANNEL_ID_RGB_LEFT_IMAGE;
+              RS_CHANNEL_ID_RGB_RIGHT_IMAGE;
           timestamp_manager_ptr->addTimestamp(timestampPtr);
         }
-        break;
       }
-      case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
-        rclcpp::LoanedMessage<ROS_ZEROCOPY_IMAGE4M> loanedMsg =
-            publisher_rgb_right_loan->borrow_loaned_message();
-        if (!loanedMsg.is_valid()) {
-          // 获取消息失败，丢弃该消息
-          RS_SPDLOG_ERROR("Failed to get AC2 Rgb Right LoanMessage !");
-          return;
-        }
-        // 引用方式获取实际的消息
-        auto &msg = loanedMsg.get();
-        auto rgb_msg = &msg;
-
-        // 构造零拷贝消息
-        robosense::convert::RSConvertManager::toZeroCopyImageMessage<
-            ROS_ZEROCOPY_IMAGE4M>(rgb_image_data_width, rgb_image_data_height,
-                                  custom_time, rgb_image_data_frame_id,
-                                  rgb_data_buf, rgb_image_data_size, rgb_msg);
-
-        timestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
-        if (right_camera_info_ptr) {
-          ROS_CAMERAINFO camera_info = *right_camera_info_ptr;
-          camera_info.header.stamp = rgb_msg->header.stamp;
-          camera_info.header.frame_id = rgb_image_data_frame_id;
-          publisher_right_camera_info->publish(camera_info);
-        }
-        publisher_rgb_right_loan->publish(std::move(*rgb_msg));
-
-        break;
-      }
-      } // switch
-      timestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
-      if (timestamp_manager_ptr) {
-        timestampPtr->channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
-            RS_CHANNEL_ID_RGB_RIGHT_IMAGE;
-        timestamp_manager_ptr->addTimestamp(timestampPtr);
-      }
-    }
 #endif // defined(ROS2_FOUND)
 
-    // 使能JPEG时，RGB数据继续提供JPEG Encoder处理
-    if (enable_jpeg) {
-      robosense::device::RSTimestampItem::Ptr jpegTimestampPtr(
-          new robosense::device::RSTimestampItem(*timestampPtr));
-      // Case1: NV12 -> RGB And/Or Crop
-      // Case2: RGB -> RGB And Crop
-      bool is_need_new_rgb_msg = false;
-      if (!(frame->frame_format ==
-                robosense::lidar::frame_format::FRAME_FORMAT_RGB24 ||
-            frame->frame_format ==
-                robosense::lidar::frame_format::FRAME_FORMAT_XR24)) {
-        is_need_new_rgb_msg = true;
-      }
-      is_need_new_rgb_msg = is_need_new_rgb_msg || is_rgb_image_crop;
-
-      std::shared_ptr<robosense::lidar::ImageData> jpegImagePtr = frame;
-      switch (image_source_type) {
-      case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC1: {
-        if (is_need_new_rgb_msg) {
-          std::shared_ptr<robosense::lidar::MonoImageData> rgbImagePtr(
-              new robosense::lidar::MonoImageData());
-          rgbImagePtr->frame_format =
-              robosense::lidar::frame_format_t::FRAME_FORMAT_RGB24;
-          rgbImagePtr->data_bytes = rgb_image_data_size;
-          rgbImagePtr->width = rgb_image_data_width;
-          rgbImagePtr->height = rgb_image_data_height;
-          rgbImagePtr->timestamp = frame->timestamp;
-          rgbImagePtr->camera_mode = frame->camera_mode;
-          rgbImagePtr->state = frame->state;
-
-          rgbImagePtr->data =
-              std::shared_ptr<uint8_t>(new uint8_t[rgbImagePtr->data_bytes],
-                                       std::default_delete<uint8_t[]>());
-          memcpy(rgbImagePtr->data.get(), rgb_data_buf,
-                 rgbImagePtr->data_bytes);
-
-          jpegImagePtr = rgbImagePtr;
+      // 使能JPEG时，RGB数据继续提供JPEG Encoder处理
+      if (enable_jpeg) {
+        robosense::device::RSTimestampItem::Ptr jpegTimestampPtr(
+            new robosense::device::RSTimestampItem(*timestampPtr));
+        // Case1: NV12 -> RGB And/Or Crop
+        // Case2: RGB -> RGB And Crop
+        bool is_need_new_rgb_msg = false;
+        if (!(frame->frame_format ==
+                  robosense::lidar::frame_format::FRAME_FORMAT_RGB24 ||
+              frame->frame_format ==
+                  robosense::lidar::frame_format::FRAME_FORMAT_XR24)) {
+          is_need_new_rgb_msg = true;
         }
+        is_need_new_rgb_msg = is_need_new_rgb_msg || is_rgb_image_crop;
 
-        std::lock_guard<std::mutex> lock(jpeg_mutex_);
-        jpeg_queue_.push({jpegImagePtr, jpegTimestampPtr});
-        jpeg_condition_.notify_one();
-        break;
-      }
-      case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
-        if (is_need_new_rgb_msg) {
-          std::shared_ptr<robosense::lidar::StereoImageData> imagePtr =
-              std::dynamic_pointer_cast<robosense::lidar::StereoImageData>(
-                  frame);
-          std::shared_ptr<robosense::lidar::StereoImageData> rgbImagePtr(
-              new robosense::lidar::StereoImageData());
-          rgbImagePtr->frame_format =
-              robosense::lidar::frame_format_t::FRAME_FORMAT_RGB24;
-          rgbImagePtr->data_bytes = rgb_image_data_size;
-          rgbImagePtr->width = rgb_image_data_width;
-          rgbImagePtr->height = rgb_image_data_height;
-          rgbImagePtr->timestamp = frame->timestamp;
-          rgbImagePtr->left_timestamp = imagePtr->left_timestamp;
-          rgbImagePtr->camera_mode = frame->camera_mode;
-          rgbImagePtr->state = frame->state;
+        std::shared_ptr<robosense::lidar::ImageData> jpegImagePtr = frame;
+        switch (image_source_type) {
+        case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC1: {
+          if (is_need_new_rgb_msg) {
+            std::shared_ptr<robosense::lidar::MonoImageData> rgbImagePtr(
+                new robosense::lidar::MonoImageData());
+            rgbImagePtr->frame_format =
+                robosense::lidar::frame_format_t::FRAME_FORMAT_RGB24;
+            rgbImagePtr->data_bytes = rgb_image_data_size;
+            rgbImagePtr->width = rgb_image_data_width;
+            rgbImagePtr->height = rgb_image_data_height;
+            rgbImagePtr->timestamp = frame->timestamp;
+            rgbImagePtr->camera_mode = frame->camera_mode;
+            rgbImagePtr->state = frame->state;
 
-          rgbImagePtr->left_data =
-              std::shared_ptr<uint8_t>(new uint8_t[rgbImagePtr->data_bytes],
-                                       std::default_delete<uint8_t[]>());
-          memcpy(rgbImagePtr->left_data.get(), rgb_data_buf,
-                 rgbImagePtr->data_bytes);
+            rgbImagePtr->data =
+                std::shared_ptr<uint8_t>(new uint8_t[rgbImagePtr->data_bytes],
+                                         std::default_delete<uint8_t[]>());
+            memcpy(rgbImagePtr->data.get(), rgb_data_buf,
+                   rgbImagePtr->data_bytes);
 
-          jpegImagePtr = rgbImagePtr;
+            jpegImagePtr = rgbImagePtr;
+          }
+
+          std::lock_guard<std::mutex> lock(jpeg_mutex_);
+          jpeg_queue_.push({jpegImagePtr, jpegTimestampPtr});
+          jpeg_condition_.notify_one();
+          break;
         }
-        std::lock_guard<std::mutex> lock(jpeg_left_mutex_);
-        jpeg_left_queue_.push({jpegImagePtr, jpegTimestampPtr});
-        jpeg_left_condition_.notify_one();
-        break;
-      }
-      case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
-        if (is_need_new_rgb_msg) {
-          std::shared_ptr<robosense::lidar::StereoImageData> imagePtr =
-              std::dynamic_pointer_cast<robosense::lidar::StereoImageData>(
-                  frame);
-          std::shared_ptr<robosense::lidar::StereoImageData> rgbImagePtr(
-              new robosense::lidar::StereoImageData());
-          rgbImagePtr->frame_format =
-              robosense::lidar::frame_format_t::FRAME_FORMAT_RGB24;
-          rgbImagePtr->data_bytes = rgb_image_data_size;
-          rgbImagePtr->width = rgb_image_data_width;
-          rgbImagePtr->height = rgb_image_data_height;
-          rgbImagePtr->timestamp = frame->timestamp;
-          rgbImagePtr->right_timestamp = imagePtr->right_timestamp;
-          rgbImagePtr->camera_mode = frame->camera_mode;
-          rgbImagePtr->state = frame->state;
+        case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
+          if (is_need_new_rgb_msg) {
+            std::shared_ptr<robosense::lidar::StereoImageData> imagePtr =
+                std::dynamic_pointer_cast<robosense::lidar::StereoImageData>(
+                    frame);
+            std::shared_ptr<robosense::lidar::StereoImageData> rgbImagePtr(
+                new robosense::lidar::StereoImageData());
+            rgbImagePtr->frame_format =
+                robosense::lidar::frame_format_t::FRAME_FORMAT_RGB24;
+            rgbImagePtr->data_bytes = rgb_image_data_size;
+            rgbImagePtr->width = rgb_image_data_width;
+            rgbImagePtr->height = rgb_image_data_height;
+            rgbImagePtr->timestamp = frame->timestamp;
+            rgbImagePtr->left_timestamp = imagePtr->left_timestamp;
+            rgbImagePtr->camera_mode = frame->camera_mode;
+            rgbImagePtr->state = frame->state;
 
-          rgbImagePtr->right_data =
-              std::shared_ptr<uint8_t>(new uint8_t[rgbImagePtr->data_bytes],
-                                       std::default_delete<uint8_t[]>());
-          memcpy(rgbImagePtr->right_data.get(), rgb_data_buf,
-                 rgbImagePtr->data_bytes);
+            rgbImagePtr->left_data =
+                std::shared_ptr<uint8_t>(new uint8_t[rgbImagePtr->data_bytes],
+                                         std::default_delete<uint8_t[]>());
+            memcpy(rgbImagePtr->left_data.get(), rgb_data_buf,
+                   rgbImagePtr->data_bytes);
 
-          jpegImagePtr = rgbImagePtr;
+            jpegImagePtr = rgbImagePtr;
+          }
+          std::lock_guard<std::mutex> lock(jpeg_left_mutex_);
+          jpeg_left_queue_.push({jpegImagePtr, jpegTimestampPtr});
+          jpeg_left_condition_.notify_one();
+          break;
         }
-        std::lock_guard<std::mutex> lock(jpeg_right_mutex_);
-        jpeg_right_queue_.push({jpegImagePtr, jpegTimestampPtr});
-        jpeg_right_condition_.notify_one();
-        break;
-      }
-      } // switch
-    }   // if(enable_jpeg)
+        case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
+          if (is_need_new_rgb_msg) {
+            std::shared_ptr<robosense::lidar::StereoImageData> imagePtr =
+                std::dynamic_pointer_cast<robosense::lidar::StereoImageData>(
+                    frame);
+            std::shared_ptr<robosense::lidar::StereoImageData> rgbImagePtr(
+                new robosense::lidar::StereoImageData());
+            rgbImagePtr->frame_format =
+                robosense::lidar::frame_format_t::FRAME_FORMAT_RGB24;
+            rgbImagePtr->data_bytes = rgb_image_data_size;
+            rgbImagePtr->width = rgb_image_data_width;
+            rgbImagePtr->height = rgb_image_data_height;
+            rgbImagePtr->timestamp = frame->timestamp;
+            rgbImagePtr->right_timestamp = imagePtr->right_timestamp;
+            rgbImagePtr->camera_mode = frame->camera_mode;
+            rgbImagePtr->state = frame->state;
+
+            rgbImagePtr->right_data =
+                std::shared_ptr<uint8_t>(new uint8_t[rgbImagePtr->data_bytes],
+                                         std::default_delete<uint8_t[]>());
+            memcpy(rgbImagePtr->right_data.get(), rgb_data_buf,
+                   rgbImagePtr->data_bytes);
+
+            jpegImagePtr = rgbImagePtr;
+          }
+          std::lock_guard<std::mutex> lock(jpeg_right_mutex_);
+          jpeg_right_queue_.push({jpegImagePtr, jpegTimestampPtr});
+          jpeg_right_condition_.notify_one();
+          break;
+        }
+        } // switch
+      }   // if(enable_jpeg)
+    }
 
     // 使能Rectify
     if (enable_rectify) {
-      robosense::device::RSTimestampItem::Ptr jpegTimestampPtr(
+      robosense::device::RSTimestampItem::Ptr rectifyTimestampPtr(
           new robosense::device::RSTimestampItem(*timestampPtr));
       bool is_need_new_rgb_msg = true;
 
@@ -3178,7 +3393,7 @@ private:
         }
 
         std::lock_guard<std::mutex> lock(rgb_rectify_mutex_);
-        rgb_rectify_queue_.push({rgbRectifyImagePtr, jpegTimestampPtr});
+        rgb_rectify_queue_.push({rgbRectifyImagePtr, rectifyTimestampPtr});
         rgb_rectify_condition_.notify_one();
         break;
       }
@@ -3207,9 +3422,23 @@ private:
 
           rgbRectifyImagePtr = rgbImagePtr;
         }
-        std::lock_guard<std::mutex> lock(rgb_rectify_left_mutex_);
-        rgb_rectify_left_queue_.push({rgbRectifyImagePtr, jpegTimestampPtr});
-        rgb_rectify_left_condition_.notify_one();
+
+        if (enable_ac2_left_image_send && enable_ac2_right_image_send) {
+          // 双目校正
+          std::lock_guard<std::mutex> lock(rgb_rectify_both_mutex_);
+          rgb_rectify_both_queue_.push(
+              {rgbRectifyImagePtr,
+               {rectifyTimestampPtr,
+                RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT}});
+          rgb_rectify_both_condition_.notify_one();
+        } else {
+          // 单目去畸变
+          std::lock_guard<std::mutex> lock(rgb_rectify_left_mutex_);
+          rgb_rectify_left_queue_.push(
+              {rgbRectifyImagePtr, rectifyTimestampPtr});
+          rgb_rectify_left_condition_.notify_one();
+        }
+
         break;
       }
       case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
@@ -3237,9 +3466,23 @@ private:
 
           rgbRectifyImagePtr = rgbImagePtr;
         }
-        std::lock_guard<std::mutex> lock(rgb_rectify_right_mutex_);
-        rgb_rectify_right_queue_.push({rgbRectifyImagePtr, jpegTimestampPtr});
-        rgb_rectify_right_condition_.notify_one();
+
+        if (enable_ac2_left_image_send && enable_ac2_right_image_send) {
+          // 双目校正
+          std::lock_guard<std::mutex> lock(rgb_rectify_both_mutex_);
+          rgb_rectify_both_queue_.push(
+              {rgbRectifyImagePtr,
+               {rectifyTimestampPtr,
+                RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT}});
+          rgb_rectify_both_condition_.notify_one();
+        } else {
+          // 单目去畸变
+          std::lock_guard<std::mutex> lock(rgb_rectify_right_mutex_);
+          rgb_rectify_right_queue_.push(
+              {rgbRectifyImagePtr, rectifyTimestampPtr});
+          rgb_rectify_right_condition_.notify_one();
+        }
+
         break;
       }
       } // switch
@@ -3251,6 +3494,11 @@ private:
       const std::shared_ptr<robosense::lidar::ImageData> &frame,
       const robosense::device::RSTimestampItem::Ptr &timestampPtr) {
     int ret = 0;
+    // 判断可用性
+    if (stereo_rectifier_ptr == nullptr || frame == nullptr) {
+      return;
+    }
+
     // 构造custom_time消息
     auto custom_time = robosense::convert::RSConvertManager::secondsToRosStamp(
         frame->timestamp);
@@ -3338,38 +3586,38 @@ private:
     cv::Mat outputRectImage;
     switch (image_source_type) {
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC1: {
-      if (!camera_rectify_map_valid) {
-        RS_SPDLOG_WARN("AC1 Image Rectify Map Not Valid !");
-        return;
-      }
       cv::Mat inputRgbMat(frame->height, frame->width, CV_8UC3,
                           frame_data_ptr.get());
-      cv::remap(inputRgbMat, outputRectImage, camera_rectify_map1,
-                camera_rectify_map2, cv::INTER_LINEAR);
+      bool status = stereo_rectifier_ptr->SingleImageRemap(0, inputRgbMat,
+                                                           &outputRectImage);
+      if (!status) {
+        RS_SPDLOG_ERROR("AC1 Image Rectify Failed !");
+        return;
+      }
       rgb_image_data_frame_id = ac1_image_frame_id;
       break;
     }
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT: {
-      if (!left_camera_rectify_map_valid) {
-        RS_SPDLOG_WARN("AC2 Image Left Rectify Map Not Valid !");
-        return;
-      }
       cv::Mat inputRgbMat(frame->height, frame->width, CV_8UC3,
                           frame_data_ptr.get());
-      cv::remap(inputRgbMat, outputRectImage, left_camera_rectify_map1,
-                left_camera_rectify_map2, cv::INTER_LINEAR);
+      bool status = stereo_rectifier_ptr->SingleImageRemap(0, inputRgbMat,
+                                                           &outputRectImage);
+      if (!status) {
+        RS_SPDLOG_ERROR("AC2 Image Left Rectify Failed !");
+        return;
+      }
       rgb_image_data_frame_id = ac2_left_image_frame_id;
       break;
     }
     case RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT: {
-      if (!right_camera_rectify_map_valid) {
-        RS_SPDLOG_WARN("AC2 Image Right Rectify Map Not Valid !");
-        return;
-      }
       cv::Mat inputRgbMat(frame->height, frame->width, CV_8UC3,
                           frame_data_ptr.get());
-      cv::remap(inputRgbMat, outputRectImage, right_camera_rectify_map1,
-                right_camera_rectify_map2, cv::INTER_LINEAR);
+      bool status = stereo_rectifier_ptr->SingleImageRemap(1, inputRgbMat,
+                                                           &outputRectImage);
+      if (!status) {
+        RS_SPDLOG_ERROR("AC2 Image Right Rectify Failed !");
+        return;
+      }
       rgb_image_data_frame_id = ac2_right_image_frame_id;
       break;
     }
@@ -3511,7 +3759,7 @@ private:
 #endif // defined(ROS2_FOUND)
 
     // 使能JPEG时，RGB数据继续提供JPEG Encoder处理
-    if (enable_rectify_jpeg) {
+    if (enable_jpeg) {
       robosense::device::RSTimestampItem::Ptr jpegTimestampPtr(
           new robosense::device::RSTimestampItem(*timestampPtr));
       bool is_need_new_rgb_msg = true;
@@ -3605,7 +3853,299 @@ private:
         break;
       }
       } // switch
-    }   // if(enable_rectify_jpeg)
+    }   // if(enable_jpeg)
+  }
+
+  void rgb_both_rectify_handle(
+      const std::shared_ptr<robosense::lidar::ImageData> &leftFrame,
+      const std::shared_ptr<robosense::lidar::ImageData> &rightFrame,
+      const robosense::device::RSTimestampItem::Ptr &leftTimestampPtr,
+      const robosense::device::RSTimestampItem::Ptr &rightTimestampPtr) {
+    int ret = 0;
+    // 判断可用性
+    if (stereo_rectifier_ptr == nullptr || leftFrame == nullptr ||
+        rightFrame == nullptr) {
+      return;
+    }
+
+    // 构造custom_time消息
+    auto custom_time = robosense::convert::RSConvertManager::secondsToRosStamp(
+        leftFrame->timestamp);
+
+    // 根据类型确定数据
+    std::shared_ptr<uint8_t> left_frame_data_ptr;
+    std::shared_ptr<uint8_t> right_frame_data_ptr;
+    {
+      if (leftFrame->camera_mode != robosense::lidar::CameraMode::STEREO) {
+        RS_SPDLOG_WARN("AC2 Image Left Not StereoImageData !");
+        return;
+      }
+      std::shared_ptr<robosense::lidar::StereoImageData> imagePtr =
+          std::dynamic_pointer_cast<robosense::lidar::StereoImageData>(
+              leftFrame);
+      if (imagePtr == nullptr) {
+        RS_SPDLOG_WARN("AC2 Image Right Cast To StereoImageData Failed !");
+        return;
+      }
+      left_frame_data_ptr = imagePtr->left_data;
+      // 消息时间戳
+      custom_time = robosense::convert::RSConvertManager::secondsToRosStamp(
+          imagePtr->left_timestamp);
+      // 更新消息时间戳
+      leftTimestampPtr->message_timestamp_ns =
+          robosense::convert::RSConvertManager::rosStampToNanoseconds(
+              custom_time);
+      leftTimestampPtr->sot_timestamp_ns = imagePtr->left_sot_timestamp * 1e9;
+      leftTimestampPtr->sot_timestamp_rt_ns =
+          imagePtr->left_sot_timestamp_rt * 1e9;
+    }
+    {
+      if (rightFrame->camera_mode != robosense::lidar::CameraMode::STEREO) {
+        RS_SPDLOG_WARN("AC2 Image Right Not StereoImageData !");
+        return;
+      }
+      std::shared_ptr<robosense::lidar::StereoImageData> imagePtr =
+          std::dynamic_pointer_cast<robosense::lidar::StereoImageData>(
+              rightFrame);
+      if (imagePtr == nullptr) {
+        RS_SPDLOG_WARN("AC2 Image Right Cast To StereoImageData Failed !");
+        return;
+      }
+      right_frame_data_ptr = imagePtr->right_data;
+      // 消息时间戳
+      custom_time = robosense::convert::RSConvertManager::secondsToRosStamp(
+          imagePtr->right_timestamp);
+      // 更新消息时间戳
+      rightTimestampPtr->message_timestamp_ns =
+          robosense::convert::RSConvertManager::rosStampToNanoseconds(
+              custom_time);
+      rightTimestampPtr->sot_timestamp_ns = imagePtr->right_sot_timestamp * 1e9;
+      rightTimestampPtr->sot_timestamp_rt_ns =
+          imagePtr->right_sot_timestamp_rt * 1e9;
+    }
+
+    int32_t rgb_image_data_height = image_height_rgb;
+    int32_t rgb_image_data_width = image_width_rgb;
+    int32_t rgb_image_data_size = rgb_image_size;
+
+    // 进行去畸变
+    std::string rgb_left_image_data_frame_id;
+    std::string rgb_right_image_data_frame_id;
+    cv::Mat outputLeftRectImage;
+    cv::Mat outputRightRectImage;
+    {
+      cv::Mat inputLeftRgbMat(leftFrame->height, leftFrame->width, CV_8UC3,
+                              left_frame_data_ptr.get());
+      cv::Mat inputRightRgbMat(rightFrame->height, rightFrame->width, CV_8UC3,
+                               right_frame_data_ptr.get());
+      bool status = stereo_rectifier_ptr->Remap(
+          inputLeftRgbMat, inputRightRgbMat, &outputLeftRectImage,
+          &outputRightRectImage);
+      if (!status) {
+        RS_SPDLOG_ERROR("AC2 Image Both Rectify Failed !");
+        return;
+      }
+      rgb_left_image_data_frame_id = ac2_left_image_frame_id;
+      rgb_right_image_data_frame_id = ac2_right_image_frame_id;
+    }
+    // std::cout << "run here 333" << std::endl;
+    if (outputLeftRectImage.empty() || outputRightRectImage.empty()) {
+      RS_SPDLOG_WARN(
+          "Image Rectify Failed: rgb_left_image_data_frame_id = " +
+          rgb_left_image_data_frame_id +
+          ", rgb_right_image_data_frame_id = " + rgb_right_image_data_frame_id);
+      return;
+    }
+
+    // 更新去畸变RGB接口:
+    rgb_image_data_height = outputLeftRectImage.rows;
+    rgb_image_data_width = outputLeftRectImage.cols;
+    rgb_image_data_size = rgb_image_data_width * rgb_image_data_height * 3;
+    uint8_t *rgb_left_data_buf = (uint8_t *)outputLeftRectImage.data;
+    uint8_t *rgb_right_data_buf = (uint8_t *)(outputRightRectImage.data);
+    // Publish ROS/ROS2 RGB Image Message
+    if (!enable_ros2_zero_copy) {
+      // Left Rectify Image
+      {
+        auto rgb_msg = MAKE_SHARED_ROS_IMAGE;
+        // 构造Ros消息
+        ret = robosense::convert::RSConvertManager::toRosImageMessage(
+            rgb_image_data_width, rgb_image_data_height, custom_time,
+            rgb_left_image_data_frame_id, rgb_left_data_buf,
+            rgb_image_data_size, rgb_msg);
+        if (ret != 0) {
+          RS_SPDLOG_ERROR("Convert To Ros/Ros2 Message Failed: "
+                          "rgb_left_image_data_frame_id = " +
+                          rgb_left_image_data_frame_id);
+          return;
+        }
+
+        leftTimestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
+        publisher_rgb_rectify_left->publish(std::move(*rgb_msg));
+        leftTimestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
+        if (timestamp_manager_ptr) {
+          leftTimestampPtr->channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
+              RS_CHANNEL_ID_RGB_RECTIFY_LEFT_IMAGE;
+          timestamp_manager_ptr->addTimestamp(rightTimestampPtr);
+        }
+      }
+
+      // Right Rectify Image
+      {
+        auto rgb_msg = MAKE_SHARED_ROS_IMAGE;
+        // 构造Ros消息
+        ret = robosense::convert::RSConvertManager::toRosImageMessage(
+            rgb_image_data_width, rgb_image_data_height, custom_time,
+            rgb_right_image_data_frame_id, rgb_right_data_buf,
+            rgb_image_data_size, rgb_msg);
+        if (ret != 0) {
+          RS_SPDLOG_ERROR("Convert To Ros/Ros2 Message Failed: "
+                          "rgb_right_image_data_frame_id = " +
+                          rgb_right_image_data_frame_id);
+          return;
+        }
+
+        rightTimestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
+        publisher_rgb_rectify_right->publish(std::move(*rgb_msg));
+        rightTimestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
+        if (timestamp_manager_ptr) {
+          rightTimestampPtr->channel_id = robosense::device::
+              RS_CHANNEL_ID_TYPE::RS_CHANNEL_ID_RGB_RECTIFY_RIGHT_IMAGE;
+          timestamp_manager_ptr->addTimestamp(rightTimestampPtr);
+        }
+      }
+    }
+#if defined(ROS2_FOUND)
+    else if (enable_ros2_zero_copy) {
+      // Left Rectify
+      {
+        rclcpp::LoanedMessage<ROS_ZEROCOPY_IMAGE4M> loanedMsg =
+            publisher_rgb_left_loan->borrow_loaned_message();
+        if (!loanedMsg.is_valid()) {
+          // 获取消息失败，丢弃该消息
+          RS_SPDLOG_ERROR("Failed to get AC2 Rgb Left LoanMessage !");
+          return;
+        }
+        // 引用方式获取实际的消息
+        auto &msg = loanedMsg.get();
+        auto rgb_msg = &msg;
+        robosense::convert::RSConvertManager::toZeroCopyImageMessage<
+            ROS_ZEROCOPY_IMAGE4M>(rgb_image_data_width, rgb_image_data_height,
+                                  custom_time, rgb_left_image_data_frame_id,
+                                  rgb_left_data_buf, rgb_image_data_size,
+                                  rgb_msg);
+        leftTimestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
+        publisher_rgb_rectify_left_loan->publish(std::move(*rgb_msg));
+        leftTimestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
+        if (timestamp_manager_ptr) {
+          leftTimestampPtr->channel_id = robosense::device::RS_CHANNEL_ID_TYPE::
+              RS_CHANNEL_ID_RGB_RECTIFY_LEFT_IMAGE;
+          timestamp_manager_ptr->addTimestamp(leftTimestampPtr);
+        }
+      }
+
+      // Right Rectify
+      {
+        rclcpp::LoanedMessage<ROS_ZEROCOPY_IMAGE4M> loanedMsg =
+            publisher_rgb_right_loan->borrow_loaned_message();
+        if (!loanedMsg.is_valid()) {
+          // 获取消息失败，丢弃该消息
+          RS_SPDLOG_ERROR("Failed to get AC2 Rgb Right LoanMessage !");
+          return;
+        }
+        // 引用方式获取实际的消息
+        auto &msg = loanedMsg.get();
+        auto rgb_msg = &msg;
+        robosense::convert::RSConvertManager::toZeroCopyImageMessage<
+            ROS_ZEROCOPY_IMAGE4M>(rgb_image_data_width, rgb_image_data_height,
+                                  custom_time, rgb_right_image_data_frame_id,
+                                  rgb_right_data_buf, rgb_image_data_size,
+                                  rgb_msg);
+        rightTimestampPtr->process_timestamp_ns = RS_TIMESTAMP_NS;
+        publisher_rgb_rectify_right_loan->publish(std::move(*rgb_msg));
+        rightTimestampPtr->publish_timestamp_ns = RS_TIMESTAMP_NS;
+        if (timestamp_manager_ptr) {
+          rightTimestampPtr->channel_id = robosense::device::
+              RS_CHANNEL_ID_TYPE::RS_CHANNEL_ID_RGB_RECTIFY_RIGHT_IMAGE;
+          timestamp_manager_ptr->addTimestamp(rightTimestampPtr);
+        }
+      }
+    }
+#endif // defined(ROS2_FOUND)
+
+    // 使能JPEG时，RGB数据继续提供JPEG Encoder处理
+    if (enable_jpeg) {
+
+      // Left Rectify
+      {
+        std::shared_ptr<robosense::lidar::ImageData> jpegRectifyImagePtr =
+            leftFrame;
+        robosense::device::RSTimestampItem::Ptr jpegTimestampPtr(
+            new robosense::device::RSTimestampItem(*leftTimestampPtr));
+
+        std::shared_ptr<robosense::lidar::StereoImageData> imagePtr =
+            std::dynamic_pointer_cast<robosense::lidar::StereoImageData>(
+                jpegRectifyImagePtr);
+        std::shared_ptr<robosense::lidar::StereoImageData> rgbImagePtr(
+            new robosense::lidar::StereoImageData());
+        rgbImagePtr->frame_format =
+            robosense::lidar::frame_format_t::FRAME_FORMAT_RGB24;
+        rgbImagePtr->data_bytes = rgb_image_data_size;
+        rgbImagePtr->width = rgb_image_data_width;
+        rgbImagePtr->height = rgb_image_data_height;
+        rgbImagePtr->timestamp = jpegRectifyImagePtr->timestamp;
+        rgbImagePtr->left_timestamp = imagePtr->left_timestamp;
+        rgbImagePtr->camera_mode = jpegRectifyImagePtr->camera_mode;
+        rgbImagePtr->state = jpegRectifyImagePtr->state;
+
+        rgbImagePtr->left_data =
+            std::shared_ptr<uint8_t>(new uint8_t[rgbImagePtr->data_bytes],
+                                     std::default_delete<uint8_t[]>());
+        memcpy(rgbImagePtr->left_data.get(), rgb_left_data_buf,
+               rgbImagePtr->data_bytes);
+
+        jpegRectifyImagePtr = rgbImagePtr;
+
+        std::lock_guard<std::mutex> lock(jpeg_rectify_left_mutex_);
+        jpeg_rectify_left_queue_.push({jpegRectifyImagePtr, jpegTimestampPtr});
+        jpeg_rectify_left_condition_.notify_one();
+      }
+
+      // Right Recitfy
+      {
+        std::shared_ptr<robosense::lidar::ImageData> jpegRectifyImagePtr =
+            rightFrame;
+        robosense::device::RSTimestampItem::Ptr jpegTimestampPtr(
+            new robosense::device::RSTimestampItem(*rightTimestampPtr));
+
+        std::shared_ptr<robosense::lidar::StereoImageData> imagePtr =
+            std::dynamic_pointer_cast<robosense::lidar::StereoImageData>(
+                jpegRectifyImagePtr);
+        std::shared_ptr<robosense::lidar::StereoImageData> rgbImagePtr(
+            new robosense::lidar::StereoImageData());
+        rgbImagePtr->frame_format =
+            robosense::lidar::frame_format_t::FRAME_FORMAT_RGB24;
+        rgbImagePtr->data_bytes = rgb_image_data_size;
+        rgbImagePtr->width = rgb_image_data_width;
+        rgbImagePtr->height = rgb_image_data_height;
+        rgbImagePtr->timestamp = jpegRectifyImagePtr->timestamp;
+        rgbImagePtr->right_timestamp = imagePtr->right_timestamp;
+        rgbImagePtr->camera_mode = jpegRectifyImagePtr->camera_mode;
+        rgbImagePtr->state = jpegRectifyImagePtr->state;
+
+        rgbImagePtr->right_data =
+            std::shared_ptr<uint8_t>(new uint8_t[rgbImagePtr->data_bytes],
+                                     std::default_delete<uint8_t[]>());
+        memcpy(rgbImagePtr->right_data.get(), rgb_right_data_buf,
+               rgbImagePtr->data_bytes);
+
+        jpegRectifyImagePtr = rgbImagePtr;
+
+        std::lock_guard<std::mutex> lock(jpeg_rectify_right_mutex_);
+        jpeg_rectify_right_queue_.push({jpegRectifyImagePtr, jpegTimestampPtr});
+        jpeg_rectify_right_condition_.notify_one();
+      }
+    }
   }
 
   void
@@ -4171,6 +4711,57 @@ private:
     RS_SPDLOG_INFO("AC2 Rgb Rectify Right Work Thread Exit !");
   }
 
+  void rgbRectifyBothProcessWorkThread() {
+    std::map<uint64_t, RSPairImageItem> imagePairMapper;
+    while (is_rgb_rectify_both_running_) {
+      std::pair<std::shared_ptr<robosense::lidar::ImageData>,
+                std::pair<robosense::device::RSTimestampItem::Ptr,
+                          RS_IMAGE_SOURCE_TYPE>>
+          frame;
+      {
+        std::unique_lock<std::mutex> lock(rgb_rectify_both_mutex_);
+        rgb_rectify_both_condition_.wait(lock, [this] {
+          return !rgb_rectify_both_queue_.empty() ||
+                 !is_rgb_rectify_both_running_;
+        });
+        if (!is_rgb_rectify_both_running_) {
+          break;
+        }
+        frame = rgb_rectify_both_queue_.front();
+        rgb_rectify_both_queue_.pop();
+      }
+
+      if (frame.first == nullptr || frame.second.first == nullptr) {
+        continue;
+      }
+
+      // 同步
+      const uint64_t frame_timestamp_ns =
+          frame.first->timestamp * 1000000000ull;
+
+      if (imagePairMapper.find(frame_timestamp_ns) == imagePairMapper.end()) {
+        imagePairMapper.insert({frame_timestamp_ns, RSPairImageItem()});
+      }
+      auto iterMap = imagePairMapper.find(frame_timestamp_ns);
+      if (frame.second.second ==
+          RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_LEFT) {
+        iterMap->second.leftImagePtr = frame.first;
+        iterMap->second.leftTimestampPtr = frame.second.first;
+      } else if (frame.second.second ==
+                 RS_IMAGE_SOURCE_TYPE::RS_IMAGE_SOURCE_AC2_RIGHT) {
+        iterMap->second.rightImagePtr = frame.first;
+        iterMap->second.rightTimestampPtr = frame.second.first;
+      }
+      if (iterMap->second.checkIsPair()) {
+        rgb_both_rectify_handle(iterMap->second.leftImagePtr,
+                                iterMap->second.rightImagePtr,
+                                iterMap->second.leftTimestampPtr,
+                                iterMap->second.rightTimestampPtr);
+        imagePairMapper.erase(iterMap);
+      }
+    }
+  }
+
   void jpegProcessWorkThread() {
     while (is_jpeg_running_) {
       std::pair<std::shared_ptr<robosense::lidar::ImageData>,
@@ -4349,14 +4940,26 @@ private:
       }
 
       // 构造消息&发布
-      ROS_RSACDEVICECALIB msg = current_device_calib_msg;
-      msg.header.frame_id = "/device_calib_info";
+      if (publisher_device_calib_info) {
+        ROS_RSACDEVICECALIB msg = current_device_calib_msg;
+        msg.header.frame_id = "/device_calib_info";
 #if defined(ROS_FOUND)
-      msg.header.stamp = ros::Time::now();
+        msg.header.stamp = ros::Time::now();
 #elif defined(ROS2_FOUND)
-      msg.header.stamp = this->now();
+        msg.header.stamp = this->now();
 #endif // ROS_ROS2_FOUND
-      publisher_device_calib_info->publish(msg);
+        publisher_device_calib_info->publish(msg);
+      }
+      if (publisher_device_factor_info) {
+        ROS_RSACDEVICEFACTOR msg = current_device_factor_msg;
+        msg.header.frame_id = "/device_factor_info";
+#if defined(ROS_FOUND)
+        msg.header.stamp = ros::Time::now();
+#elif defined(ROS2_FOUND)
+        msg.header.stamp = this->now();
+#endif // ROS_ROS2_FOUND
+        publisher_device_factor_info->publish(msg);
+      }
     }
     RS_SPDLOG_INFO("Device Info Work Thread Exist !");
   }
@@ -4367,7 +4970,8 @@ private:
         device_manager_ptr->getDeviceInfo(uuid, current_device_info);
     if (isSuccess) {
       if (robosense::calib::RSCalibManager::parserDeviceCalibInfo(
-              uuid, current_device_info, current_device_calib_msg)) {
+              uuid, current_device_info, current_device_calib_msg,
+              current_device_factor_msg)) {
         return -1;
       } else {
         current_device_info_ready = true;
@@ -4382,6 +4986,14 @@ private:
     if (current_device_info_ready) {
       publisher_device_calib_info = create_ros_publisher<ROS_RSACDEVICECALIB>(
           ac_device_calib_info_topic_name, 3);
+      if (enable_device_factor_send) {
+        RS_SPDLOG_INFO("Enable Device Factor Info Send !");
+        publisher_device_factor_info =
+            create_ros_publisher<ROS_RSACDEVICEFACTOR>(
+                ac_device_factor_info_topic_name, 3);
+      } else {
+        RS_SPDLOG_INFO("Disable Device Factor Info Send !");
+      }
     } else {
       RS_SPDLOG_WARN("Can Not Parser Device Calib Info From Device !");
       return -1;
@@ -4391,84 +5003,41 @@ private:
   }
 
   int initCameraInfoFromDevice() {
-    if (current_device_info_ready) {
-      if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
-        const auto &camerainfo_ptr =
-            robosense::calib::RSCalibManager::parserAC1CameraInfo(
-                current_device_calib_msg);
-        if (camerainfo_ptr) {
-          publisher_camera_info =
-              create_ros_publisher<ROS_CAMERAINFO>(camera_info_topic_name, 10);
-          camera_info_ptr = camerainfo_ptr;
-        } else {
-          camera_info_ptr.reset();
-          RS_SPDLOG_WARN("AC1 Parser Image Calibration Failed !");
-          return -1;
-        }
-
-        if (enable_rectify && camera_info_ptr) {
-          int ret = robosense::calib::RSCalibManager::parserImageRectifyMap(
-              camera_info_ptr, camera_rectify_map1, camera_rectify_map2);
-          if (ret == 0) {
-            camera_rectify_map_valid = true;
-          } else {
-            camera_rectify_map_valid = false;
-            RS_WARNING
-                << "AC1 Create Rectify Map From Image Calibration Failed !";
-          }
-        }
-      } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
-        const auto &left_right_camera_info_ptr =
-            robosense::calib::RSCalibManager::parserAC2CameraInfo(
-                current_device_calib_msg);
-        if (left_right_camera_info_ptr.first &&
-            left_right_camera_info_ptr.second) {
-          if (enable_ac2_left_image_send) {
-            publisher_left_camera_info = create_ros_publisher<ROS_CAMERAINFO>(
-                camera_info_left_topic_name, 10);
-            left_camera_info_ptr = left_right_camera_info_ptr.first;
-          }
-          if (enable_ac2_right_image_send) {
-            publisher_right_camera_info = create_ros_publisher<ROS_CAMERAINFO>(
-                camera_info_right_topic_name, 10);
-            right_camera_info_ptr = left_right_camera_info_ptr.second;
-          }
-        } else {
-          left_camera_info_ptr.reset();
-          right_camera_info_ptr.reset();
-          RS_SPDLOG_WARN("AC2 Parser Image Calibration Failed !");
-          return -2;
-        }
-
-        if (enable_rectify && left_camera_info_ptr) {
-          int ret = robosense::calib::RSCalibManager::parserImageRectifyMap(
-              left_camera_info_ptr, left_camera_rectify_map1,
-              left_camera_rectify_map2);
-          if (ret == 0) {
-            left_camera_rectify_map_valid = true;
-          } else {
-            left_camera_rectify_map_valid = false;
-            RS_SPDLOG_WARN("AC2 Create Left Rectify Map From Image Calibration "
-                           "Failed !");
-          }
-        }
-        if (enable_rectify && right_camera_info_ptr) {
-          int ret = robosense::calib::RSCalibManager::parserImageRectifyMap(
-              right_camera_info_ptr, right_camera_rectify_map1,
-              right_camera_rectify_map2);
-          if (ret == 0) {
-            right_camera_rectify_map_valid = true;
-          } else {
-            right_camera_rectify_map_valid = false;
-            RS_SPDLOG_WARN(
-                "AC2 Create Right Rectify Map From Image Calibration "
-                "Failed !");
-          }
-        }
+    if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
+      const auto &camerainfo_ptr =
+          robosense::calib::RSCalibManager::parserAC1CameraInfo(
+              current_device_calib_msg);
+      if (camerainfo_ptr) {
+        publisher_camera_info =
+            create_ros_publisher<ROS_CAMERAINFO>(camera_info_topic_name, 10);
+        camera_info_ptr = camerainfo_ptr;
+      } else {
+        camera_info_ptr.reset();
+        RS_SPDLOG_WARN("AC1 Parser Image Calibration Failed !");
+        return -1;
       }
-    } else {
-      RS_SPDLOG_WARN("Can Not Parser Camera Info From Device !");
-      return -3;
+    } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
+      const auto &left_right_camera_info_ptr =
+          robosense::calib::RSCalibManager::parserAC2CameraInfo(
+              current_device_calib_msg);
+      if (left_right_camera_info_ptr.first &&
+          left_right_camera_info_ptr.second) {
+        if (enable_ac2_left_image_send) {
+          publisher_left_camera_info = create_ros_publisher<ROS_CAMERAINFO>(
+              camera_info_left_topic_name, 10);
+          left_camera_info_ptr = left_right_camera_info_ptr.first;
+        }
+        if (enable_ac2_right_image_send) {
+          publisher_right_camera_info = create_ros_publisher<ROS_CAMERAINFO>(
+              camera_info_right_topic_name, 10);
+          right_camera_info_ptr = left_right_camera_info_ptr.second;
+        }
+      } else {
+        left_camera_info_ptr.reset();
+        right_camera_info_ptr.reset();
+        RS_SPDLOG_WARN("AC2 Parser Image Calibration Failed !");
+        return -2;
+      }
     }
 
     return 0;
@@ -4480,7 +5049,8 @@ private:
           robosense::calib::RSCalibManager::checkImageCalibFileIsAC1(
               device_calib_file_path)) {
         int ret = robosense::calib::RSCalibManager::parserAC1DeviceCalibInfo(
-            device_calib_file_path, current_device_calib_msg);
+            device_calib_file_path, current_device_calib_msg,
+            current_device_factor_msg);
         if (ret != 0) {
           RS_SPDLOG_WARN("Parser AC1 Device Calib Info From Files: " +
                          device_calib_file_path + " Failed !");
@@ -4490,7 +5060,8 @@ private:
                  robosense::calib::RSCalibManager::checkImageCalibFileIsAC2(
                      device_calib_file_path)) {
         int ret = robosense::calib::RSCalibManager::parserAC2DeviceCalibInfo(
-            device_calib_file_path, current_device_calib_msg);
+            device_calib_file_path, current_device_calib_msg,
+            current_device_factor_msg);
         if (ret != 0) {
           RS_SPDLOG_WARN("Parser AC2 Device Calib Info From Files: " +
                          device_calib_file_path + " Failed !");
@@ -4506,101 +5077,19 @@ private:
     publisher_device_calib_info = create_ros_publisher<ROS_RSACDEVICECALIB>(
         ac_device_calib_info_topic_name, 3);
 
-    return 0;
-  }
-
-  int initCameraInfoFromFiles() {
-    if (robosense::calib::RSCalibManager::isFileExist(device_calib_file_path)) {
-      if (lidar_type == robosense::lidar::LidarType::RS_AC1 &&
-          robosense::calib::RSCalibManager::checkImageCalibFileIsAC1(
-              device_calib_file_path)) {
-        if (enable_ac1_image_send) {
-          const auto &camerainfo_ptr =
-              robosense::calib::RSCalibManager::parserAC1CameraInfo(
-                  device_calib_file_path);
-          if (camerainfo_ptr) {
-            publisher_camera_info = create_ros_publisher<ROS_CAMERAINFO>(
-                camera_info_topic_name, 10);
-            camera_info_ptr = camerainfo_ptr;
-          } else {
-            camera_info_ptr.reset();
-            RS_SPDLOG_WARN("AC1 Parser Image Calibration Failed !");
-            return -1;
-          }
-
-          if (enable_rectify && camera_info_ptr) {
-            int ret = robosense::calib::RSCalibManager::parserImageRectifyMap(
-                camera_info_ptr, camera_rectify_map1, camera_rectify_map2);
-            if (ret == 0) {
-              camera_rectify_map_valid = true;
-            } else {
-              camera_rectify_map_valid = false;
-              RS_SPDLOG_WARN(
-                  "AC1 Create Rectify Map From Image Calibration Failed !");
-            }
-          }
-        }
-      } else if (lidar_type == robosense::lidar::LidarType::RS_AC2 &&
-                 robosense::calib::RSCalibManager::checkImageCalibFileIsAC2(
-                     device_calib_file_path)) {
-        const auto &left_right_camera_info_ptr =
-            robosense::calib::RSCalibManager::parserAC2CameraInfo(
-                device_calib_file_path);
-        if (left_right_camera_info_ptr.first &&
-            left_right_camera_info_ptr.second) {
-          if (enable_ac2_left_image_send) {
-            publisher_left_camera_info = create_ros_publisher<ROS_CAMERAINFO>(
-                camera_info_left_topic_name, 10);
-            left_camera_info_ptr = left_right_camera_info_ptr.first;
-          }
-          if (enable_ac2_right_image_send) {
-            publisher_right_camera_info = create_ros_publisher<ROS_CAMERAINFO>(
-                camera_info_right_topic_name, 10);
-            right_camera_info_ptr = left_right_camera_info_ptr.second;
-          }
-        } else {
-          left_camera_info_ptr.reset();
-          right_camera_info_ptr.reset();
-          RS_SPDLOG_WARN("AC2 Parser Image Calibration Failed !");
-          return -2;
-        }
-
-        if (enable_rectify && left_camera_info_ptr) {
-          int ret = robosense::calib::RSCalibManager::parserImageRectifyMap(
-              left_camera_info_ptr, left_camera_rectify_map1,
-              left_camera_rectify_map2);
-          if (ret == 0) {
-            left_camera_rectify_map_valid = true;
-          } else {
-            left_camera_rectify_map_valid = false;
-            RS_SPDLOG_WARN("AC2 Create Left Rectify Map From Image Calibration "
-                           "Failed !");
-          }
-        }
-        if (enable_rectify && right_camera_info_ptr) {
-          int ret = robosense::calib::RSCalibManager::parserImageRectifyMap(
-              right_camera_info_ptr, right_camera_rectify_map1,
-              right_camera_rectify_map2);
-          if (ret == 0) {
-            right_camera_rectify_map_valid = true;
-          } else {
-            right_camera_rectify_map_valid = false;
-            RS_SPDLOG_WARN(
-                "AC2 Create Right Rectify Map From Image Calibration "
-                "Failed !");
-          }
-        }
-      }
+    if (enable_device_factor_send) {
+      RS_SPDLOG_INFO("Enable Device Factor Info Send !");
+      publisher_device_factor_info = create_ros_publisher<ROS_RSACDEVICEFACTOR>(
+          ac_device_factor_info_topic_name, 3);
     } else {
-      RS_SPDLOG_WARN("Image Calibration File: " + device_calib_file_path +
-                     " Not Exist !");
-      return -3;
+      RS_SPDLOG_INFO("Disable Device Factor Info Send !");
     }
 
     return 0;
   }
 
   int initCameraInfoAndDeviceCalibInfo(const std::string &uuid) {
+    int ret = 0;
     // Step1: Device 载入Camera Calib Info
     loadCameraCalibInfoFromDevice(uuid);
 
@@ -4608,77 +5097,165 @@ private:
     bool isSuccess = false;
     if (enable_device_calib_info_from_device_pripority) {
       // std::cout << "run here 1" << std::endl;
-      int ret1 = initCameraInfoFromDevice();
-      // std::cout << "run here 2" << std::endl;
-      int ret2 = initDeviceCalibInfoFromDevice();
-      isSuccess = (ret1 == 0) && (ret2 == 0);
+      ret = initDeviceCalibInfoFromDevice();
+      isSuccess = (ret == 0);
 
       if (isSuccess) {
         RS_SPDLOG_INFO("Device priority(1): Load Device Calib Info From Device "
                        "Successed !");
       } else {
-        RS_SPDLOG_WARN("Device priority(1): ret1 = " + std::to_string(ret1) +
-                       ", ret2 = " + std::to_string(ret2) +
+        RS_SPDLOG_WARN("Device priority(1): ret = " + std::to_string(ret) +
                        ": Load Device Calib Info From Device Failed !");
       }
 
       if (!isSuccess) {
         // std::cout << "run here 3" << std::endl;
-        int ret1 = initCameraInfoFromFiles();
-        // std::cout << "run here 4" << std::endl;
-        int ret2 = initDeviceCalibInfoFromFiles();
-        isSuccess = (ret1 == 0) && (ret2 == 0);
+        ret = initDeviceCalibInfoFromFiles();
+        isSuccess = (ret == 0);
 
         if (isSuccess) {
           RS_SPDLOG_INFO(
               "Device priority(2): Load Device Calib Info From Files "
               "Successed !");
         } else {
-          RS_SPDLOG_WARN("Device priority(2): ret1 = " + std::to_string(ret1) +
-                         ", ret2 = " + std::to_string(ret2) +
+          RS_SPDLOG_WARN("Device priority(2): ret = " + std::to_string(ret) +
                          ": Load Device Calib Info From Files Failed !");
         }
       }
     } else {
       // std::cout << "run here 5" << std::endl;
-      int ret1 = initCameraInfoFromFiles();
-      // std::cout << "run here 6" << std::endl;
-      int ret2 = initDeviceCalibInfoFromFiles();
-      isSuccess = (ret1 == 0) && (ret2 == 0);
+      ret = initDeviceCalibInfoFromFiles();
+      isSuccess = (ret == 0);
 
       if (isSuccess) {
         RS_SPDLOG_INFO("Files priority(1): Load Device Calib Info From Files "
                        "Successed !");
       } else {
-        RS_SPDLOG_WARN("Files priority(1): ret1 = " + std::to_string(ret1) +
-                       ", ret2 = " + std::to_string(ret2) +
+        RS_SPDLOG_WARN("Files priority(1): ret = " + std::to_string(ret) +
                        ": Load Device Calib Info From Files Failed !");
       }
 
       if (!isSuccess) {
         // std::cout << "run here 7" << std::endl;
-        int ret1 = initCameraInfoFromDevice();
-        // std::cout << "run here 8" << std::endl;
-        int ret2 = initDeviceCalibInfoFromDevice();
-        isSuccess = (ret1 == 0) && (ret2 == 0);
+        ret = initDeviceCalibInfoFromDevice();
+        isSuccess = (ret == 0);
 
         if (isSuccess) {
           RS_SPDLOG_INFO(
               "Files priority(2): Load Device Calib Info From Device "
               "Successed ! ");
         } else {
-          RS_SPDLOG_WARN("Files priority(2): ret1 = " + std::to_string(ret1) +
-                         ", ret2 = " + std::to_string(ret2) +
+          RS_SPDLOG_WARN("Files priority(2): ret = " + std::to_string(ret) +
                          ": Load Device Calib Info From Device Failed !");
         }
+      }
+    }
+
+    // 是否进行校准
+    if (isSuccess && enable_rectify) {
+      try {
+        stereo_rectifier_ptr.reset(new robosense::StereoRectifier());
+      } catch (...) {
+        RS_SPDLOG_ERROR("Malloc robosense::StereoRectifier Failed !");
+        return -1;
+      }
+
+      robosense::calibration::DeviceCalibration deviceCalibration;
+      if (lidar_type == robosense::lidar::LidarType::RS_AC1) {
+        ret = robosense::calib::RSCalibManager::parserAC1DeviceCalibration(
+            current_device_calib_msg, deviceCalibration);
+
+        if (ret != 0) {
+          RS_SPDLOG_ERROR("Parse DeviceCalibration(AC1) Failed: ret = " +
+                          std::to_string(ret));
+          return -2;
+        }
+
+        bool status = stereo_rectifier_ptr->Initialize(
+            deviceCalibration, 1, 0.0,
+            cv::Size(image_ac_rectify_width, image_ac_rectify_height));
+
+        if (!status) {
+          RS_SPDLOG_ERROR("Stereo Rectify Initial(AC1) Failed !");
+          return -3;
+        }
+
+        deviceCalibration = stereo_rectifier_ptr->GetRectifiedCalibrationInfo();
+
+        ret = robosense::calib::RSCalibManager::parserAC1DeviceCalibInfo(
+            deviceCalibration, current_device_calib_msg);
+        if (ret != 0) {
+          RS_SPDLOG_ERROR("Parse DeviceCalibInfo(AC1) Failed: ret = " +
+                          std::to_string(ret));
+          return -4;
+        }
+
+      } else if (lidar_type == robosense::lidar::LidarType::RS_AC2) {
+        ret = robosense::calib::RSCalibManager::parserAC2DeviceCalibration(
+            current_device_calib_msg, deviceCalibration);
+
+        if (ret != 0) {
+          RS_SPDLOG_ERROR("Parse DeviceCalibration(AC2) Failed: ret = " +
+                          std::to_string(ret));
+          return -2;
+        }
+
+        bool status = stereo_rectifier_ptr->Initialize(
+            deviceCalibration,
+            (enable_ac2_left_image_send && enable_ac2_right_image_send ? 0 : 1),
+            0.0, cv::Size(image_ac_rectify_width, image_ac_rectify_height));
+        if (!status) {
+          RS_SPDLOG_ERROR("Stereo Rectify Initial(AC2) Failed !");
+          return -3;
+        }
+
+        deviceCalibration = stereo_rectifier_ptr->GetRectifiedCalibrationInfo();
+
+        ret = robosense::calib::RSCalibManager::parserAC2DeviceCalibInfo(
+            deviceCalibration, current_device_calib_msg);
+        if (ret != 0) {
+          RS_SPDLOG_ERROR("Parse DeviceCalibInfo(AC2) Failed: ret = " +
+                          std::to_string(ret));
+          return -4;
+        }
+      }
+    }
+
+    // 更新camera_info
+    if (isSuccess) {
+      ret = initCameraInfoFromDevice();
+      if (ret != 0) {
+        RS_SPDLOG_ERROR("Initial Camera Info Failed: ret = " +
+                        std::to_string(ret));
+        return -5;
       }
     }
 
     // 更新状态
     current_device_info_valid = isSuccess;
 
-    return (isSuccess ? 0 : -1);
+    return (isSuccess ? 0 : -6);
   }
+
+private:
+  class RSPairImageItem {
+  public:
+    using Ptr = std::shared_ptr<RSPairImageItem>;
+    using ConstPtr = std::shared_ptr<const RSPairImageItem>;
+
+  public:
+    RSPairImageItem() = default;
+    ~RSPairImageItem() = default;
+
+  public:
+    bool checkIsPair() const { return leftImagePtr && rightImagePtr; }
+
+  public:
+    std::shared_ptr<robosense::lidar::ImageData> leftImagePtr;
+    std::shared_ptr<robosense::lidar::ImageData> rightImagePtr;
+    robosense::device::RSTimestampItem::Ptr leftTimestampPtr;
+    robosense::device::RSTimestampItem::Ptr rightTimestampPtr;
+  };
 
 private:
   // RGB 处理线程
@@ -4730,6 +5307,15 @@ private:
                        robosense::device::RSTimestampItem::Ptr>>
       rgb_rectify_right_queue_;
   bool is_rgb_rectify_right_running_ = false;
+
+  std::shared_ptr<std::thread> rgb_rectify_both_thread_ptr;
+  std::mutex rgb_rectify_both_mutex_;
+  std::condition_variable rgb_rectify_both_condition_;
+  std::queue<std::pair<
+      std::shared_ptr<robosense::lidar::ImageData>,
+      std::pair<robosense::device::RSTimestampItem::Ptr, RS_IMAGE_SOURCE_TYPE>>>
+      rgb_rectify_both_queue_;
+  bool is_rgb_rectify_both_running_ = false;
 
 private:
   // JPEG 处理线程
@@ -4822,6 +5408,7 @@ private:
   ROS_PUBLISHER_COMPRESSED_IMAGE_PTR publisher_jpeg_rectify_left;
   ROS_PUBLISHER_COMPRESSED_IMAGE_PTR publisher_jpeg_rectify_right;
   ROS_PUBLISHER_RSACDEVICECALIB_PTR publisher_device_calib_info;
+  ROS_PUBLISHER_RSACDEVICEFACTOR_PTR publisher_device_factor_info;
 
   // 设备管理
   std::string device_interface;
@@ -4832,15 +5419,17 @@ private:
   std::string current_device_uuid;
   bool current_device_info_ready = false;
   bool current_device_info_valid = false;
+  bool enable_device_factor_send = false;
   robosense::lidar::DeviceInfo current_device_info;
   ROS_RSACDEVICECALIB current_device_calib_msg;
+  ROS_RSACDEVICEFACTOR current_device_factor_msg;
+  std::shared_ptr<robosense::StereoRectifier> stereo_rectifier_ptr;
 
   // 驱动相关
   int image_input_fps = 30;
   int imu_input_fps = 200;
   bool enable_jpeg = false;
   bool enable_rectify = false;
-  bool enable_rectify_jpeg = false;
   int jpeg_quality = 70;
   std::string angle_calib_basic_dir_path = "";
   std::string device_calib_file_path = "";
@@ -4930,8 +5519,16 @@ private:
   robosense::color::ColorCodec::Ptr rgb_right_codec_ptr;
 
   RSImageCropConfig ac1_crop_config;
+  RS_AC2_HARDWARE_TYPE ac2_hardware_type =
+      RS_AC2_HARDWARE_TYPE::RS_AC2_HARDWARE_UNKNOWN;
   RSImageCropConfig ac2_left_crop_config;
   RSImageCropConfig ac2_right_crop_config;
+  // AC2: A0
+  RSImageCropConfig ac2_a0_left_crop_config;
+  RSImageCropConfig ac2_a0_right_crop_config;
+  // AC2: A1
+  RSImageCropConfig ac2_a1_left_crop_config;
+  RSImageCropConfig ac2_a1_right_crop_config;
 
 #if defined(ENABLE_SUPPORT_RS_DRIVER_ALGORITHM)
   robosense::lidar::AlgorithmParam algorithm_param;
@@ -4943,8 +5540,8 @@ private:
 private:
   const int image_width_ac1 = 1920;
   const int image_height_ac1 = 1080;
-  const int image_usb_width_ac2_driver = 1616;
-  const int image_usb_height_ac2_driver = 2592;
+  const int image_usb_width_ac2_driver = 1612;  // 1616;
+  const int image_usb_height_ac2_driver = 2636; // 2592;
   const int image_usb_with_angle_calib_x3m_width_ac2_driver = 1612;
   const int image_usb_with_angle_calib_x3m_height_ac2_driver = 2636;
   const int image_usb_with_angle_calib_2eg_width_ac2_driver = 1616;
@@ -4953,6 +5550,10 @@ private:
   const int image_gmsl_height_ac2_driver = 2592;
   const int image_width_ac2_rgb = 1600;
   const int image_height_ac2_rgb = 1200;
+
+private:
+  const int image_ac_rectify_width = 1920;
+  const int image_ac_rectify_height = 1080;
 
 private:
   std::string topic_name;
@@ -4974,6 +5575,7 @@ private:
   std::string camera_info_left_topic_name;
   std::string camera_info_right_topic_name;
   std::string ac_device_calib_info_topic_name;
+  std::string ac_device_factor_info_topic_name;
 };
 
 /**

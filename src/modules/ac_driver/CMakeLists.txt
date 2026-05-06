@@ -209,6 +209,12 @@ include_directories(${PROJECT_SOURCE_DIR}/devicemanager/include/)
 add_subdirectory(devicemanager)
 
 #
+# robosense_stereo_rectify
+#
+include_directories(${PROJECT_SOURCE_DIR}/robosense_stereo_rectify/include/)
+add_subdirectory(robosense_stereo_rectify)
+
+#
 # codec 
 # 
 include_directories(${PROJECT_SOURCE_DIR}/codec) 
@@ -248,7 +254,7 @@ target_link_libraries(ms_node ${LZMA_LIBRARY})
 target_link_libraries(ms_node ${M_LIBRARY})
 target_link_libraries(ms_node ${Z_LIBRARY})
 target_link_libraries(ms_node ${PCL_LIBRARIES})
-target_link_libraries(ms_node device codec log)
+target_link_libraries(ms_node device codec log stereo_rectify_core)
 if(TARGET_ARCH STREQUAL "RK3588")
   find_library(NUMA_LIBRARY numa)
   target_link_libraries(ms_node ${NUMA_LIBRARY})

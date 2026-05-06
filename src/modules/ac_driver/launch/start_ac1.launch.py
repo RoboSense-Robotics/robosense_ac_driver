@@ -43,7 +43,6 @@ def generate_launch_description():
                 'imu_input_fps': 200,
                 'enable_jpeg': False,
                 'enable_rectify': False, 
-                'enable_rectify_jpeg': False,
                 'jpeg_quality': 70, 
                 'topic_prefix': "",
                 'serial_number': "",  
@@ -74,21 +73,33 @@ def generate_launch_description():
                 'log_file_dir_path': "",  # log_dir_path: 表示包的install目录下的log文件夹路径
                 'log_level': 2,           # 0: trace; 1: debug; 2: info; 3: warn; 4: error; 5: fatal
                 'is_log_file_trunc': True, 
+                # enable factor 
+                'enable_factor_send': False, 
                 # ac1 image crop 
                 'ac1_crop_top': 0, 
                 'ac1_crop_bottom': 0, 
                 'ac1_crop_left': 0, 
                 'ac1_crop_right': 0,
-                # ac2 left image crop 
+                # ac2 A0 left image crop 
                 'ac2_left_crop_top': 0, 
                 'ac2_left_crop_bottom': 240, 
                 'ac2_left_crop_left': 320, 
                 'ac2_left_crop_right': 0,
-                # ac2 right image crop 
+                # ac2 A0 right image crop 
                 'ac2_right_crop_top': 0, 
                 'ac2_right_crop_bottom': 240, 
                 'ac2_right_crop_left': 320, 
                 'ac2_right_crop_right': 0,
+                # ac2 A1 left image crop 
+                'ac2_a1_left_crop_top': 0, 
+                'ac2_a1_left_crop_bottom': 0, 
+                'ac2_a1_left_crop_left': 0, 
+                'ac2_a1_left_crop_right': 0,
+                # ac2 A1 right image crop 
+                'ac2_a1_right_crop_top': 0, 
+                'ac2_a1_right_crop_bottom': 0, 
+                'ac2_a1_right_crop_left': 0, 
+                'ac2_a1_right_crop_right': 0,
                 # ac2_denoise_param 
                 'enable_denoise': False,  
                 'enable_smooth': False,  

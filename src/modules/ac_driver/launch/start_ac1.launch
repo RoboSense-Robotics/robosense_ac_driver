@@ -14,8 +14,6 @@
     <param name="enable_jpeg" value="false" />
     <!-- Whether to enable image rectify -->
     <param name="enable_rectify" value="false" />
-    <!-- Whether to enable image rectify compression -->
-    <param name="enable_rectify_jpeg" value="false" />
     <!-- Whether to enable JPEG image compression quality -->
     <param name="jpeg_quality" value="70" />
     <!-- Whether add topic prefix -->
@@ -74,6 +72,8 @@
     <param name="log_level" value="2" />
     <!-- Whether Output SPDLOG File Truncate if log file exist --> 
     <param name="is_log_file_trunc" value="true" />
+    <!-- Whether Enable Factor Publish, Default: false --> 
+    <param name="enable_factor_send" value="false" />
     <!-- Whether AC1 Crop Top -->
     <param name="ac1_crop_top" value="0" />
     <!-- Whether AC1 Crop Bottom -->
@@ -82,22 +82,38 @@
     <param name="ac1_crop_left" value="0" />
     <!-- Whether AC1 Crop Right -->
     <param name="ac1_crop_right" value="0" />
-    <!-- Whether AC2 Left Crop Top -->
+    <!-- Whether AC2 A0 Left Crop Top -->
     <param name="ac2_left_crop_top" value="0" />
-    <!-- Whether AC2 Left Crop Bottom -->
+    <!-- Whether AC2 A0 Left Crop Bottom -->
     <param name="ac2_left_crop_bottom" value="240" />
-    <!-- Whether AC2 Left Crop Left -->
+    <!-- Whether AC2 A0 Left Crop Left -->
     <param name="ac2_left_crop_left" value="320" />
-    <!-- Whether AC2 Left Crop Right -->
+    <!-- Whether AC2 A0 Left Crop Right -->
     <param name="ac2_left_crop_right" value="0" />
-    <!-- Whether AC2 Right Crop Top -->
+    <!-- Whether AC2 A0 Right Crop Top -->
     <param name="ac2_right_crop_top" value="0" />
-    <!-- Whether AC2 Right Crop Bottom -->
+    <!-- Whether AC2 A0 Right Crop Bottom -->
     <param name="ac2_right_crop_bottom" value="240" />
-    <!-- Whether AC2 Right Crop Left -->
+    <!-- Whether AC2 A0 Right Crop Left -->
     <param name="ac2_right_crop_left" value="320" />
-    <!-- Whether AC2 Right Crop Right -->
+    <!-- Whether AC2 A0 Right Crop Right -->
     <param name="ac2_right_crop_right" value="0" />
+    <!-- Whether AC2 A1 Left Crop Top -->
+    <param name="ac2_a1_left_crop_top" value="0" />
+    <!-- Whether AC2 A1 Left Crop Bottom -->
+    <param name="ac2_a1_left_crop_bottom" value="0" />
+    <!-- Whether AC2 A1 Left Crop Left -->
+    <param name="ac2_a1_left_crop_left" value="0" />
+    <!-- Whether AC2 A1 Left Crop Right -->
+    <param name="ac2_a1_left_crop_right" value="0" />
+    <!-- Whether AC2 A1 Right Crop Top -->
+    <param name="ac2_a1_right_crop_top" value="0" />
+    <!-- Whether AC2 A1 Right Crop Bottom -->
+    <param name="ac2_a1_right_crop_bottom" value="0" />
+    <!-- Whether AC2 A1 Right Crop Left -->
+    <param name="ac2_a1_right_crop_left" value="0" />
+    <!-- Whether AC2 A1 Right Crop Right -->
+    <param name="ac2_a1_right_crop_right" value="0" />
     <!-- Whether AC2 Enable Denoise -->
     <param name="enable_denoise" value="false" />
     <!-- Whether AC2 Enable Smooth -->

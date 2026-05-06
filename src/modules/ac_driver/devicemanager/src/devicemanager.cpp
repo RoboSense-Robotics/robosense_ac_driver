@@ -361,7 +361,7 @@ int DeviceManager::openDevice(const RSDeviceOpenConfig &device_config) {
     return -4;
   }
 
-  iterMap->second.is_pause = false;
+  iterMap->second.is_pause = true; // 默认为暂停
   iterMap->second.driver_ptr = driver_ptr;
 
   return 0;
