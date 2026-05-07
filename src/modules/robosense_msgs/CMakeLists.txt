@@ -47,6 +47,7 @@ if(ROS_VERSION EQUAL 1)
     # RsPointCloud8M.msg 
     # RsPointField.msg  
     RsACDeviceCalib.msg 
+    RsACDeviceFactor.msg
   )
 
   generate_messages(
@@ -84,6 +85,7 @@ elseif(ROS_VERSION EQUAL 2)
     "msg/RsPointCloud8M.msg" 
     "msg/RsPointField.msg"  
     "msg/RsACDeviceCalib.msg" 
+    "msg/RsACDeviceFactor.msg"
     DEPENDENCIES builtin_interfaces std_msgs sensor_msgs
   )
 

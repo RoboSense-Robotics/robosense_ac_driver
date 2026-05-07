@@ -6,7 +6,7 @@ uint32 height
 uint32 width
 
 # Describes the channels and their layout in the binary data blob.
-RsPointField[6] fields
+RsPointField[8] fields
 
 bool    is_bigendian        # Is this data bigendian
 uint32  point_step          # Length of a point in bytes
