@@ -45,6 +45,12 @@
 #include "hyper_vision/devicemanager/devicemanager.h"
 #include "rosmanager.hpp"
 
+#if defined(ROS_FOUND)
+#include <std_srvs/SetBool.h>
+#elif defined(ROS2_FOUND)
+#include <std_srvs/srv/set_bool.hpp>
+#endif // defined(ROS_ROS2_FOUND)
+
 enum class RS_IMAGE_SOURCE_TYPE : int {
   RS_IMAGE_SOURCE_AC1 = 0,
   RS_IMAGE_SOURCE_AC2_LEFT,
@@ -203,6 +209,18 @@ public:
     } else {
       const std::string &error_info =
           "Initial Driver Device Manager Successed ! ";
+      RS_SPDLOG_INFO(error_info);
+    }
+
+    // Initial Services
+    ret = initServices();
+    if (ret != 0) {
+      const std::string &error_info =
+          "Initial Driver Service(s) Failed: ret = " + std::to_string(ret);
+      RS_SPDLOG_ERROR(error_info);
+      return -6;
+    } else {
+      const std::string &error_info = "Initial Driver Service(s) Successed ! ";
       RS_SPDLOG_INFO(error_info);
     }
 
@@ -905,6 +923,73 @@ private:
     return 0;
   }
 
+  int initServices() {
+#if defined(ROS_FOUND)
+    laser_control_srv = nh.advertiseService(
+        laser_control_service_name, &MSPublisher::laserControlServiceCallback,
+        this);
+#elif defined(ROS2_FOUND)
+    laser_control_srv = this->create_service<std_srvs::srv::SetBool>(
+        laser_control_service_name,
+        std::bind(&MSPublisher::laserControlServiceCallback, this,
+                  std::placeholders::_1, std::placeholders::_2));
+#endif // defined(ROS_ROS2_FOUND)
+    RS_SPDLOG_INFO("Advertise Laser Control Service = " +
+                   laser_control_service_name + " Successed !");
+    return 0;
+  }
+
+  // 开关激光发射的实际业务逻辑，与 ROS/ROS2 版本无关，供两套服务回调复用。
+  // 当前仅 RS_AC1 支持该能力，且作用于当前已打开的设备。
+  void handleLaserControl(const bool laser_on, bool &success,
+                          std::string &message) {
+    std::string uuid;
+    {
+      std::lock_guard<std::mutex> lg(current_device_uuid_mtx);
+      uuid = current_device_uuid;
+    }
+
+    if (uuid.empty()) {
+      success = false;
+      message = "No device opened yet";
+      RS_SPDLOG_WARN("Set Laser " + std::string(laser_on ? "On" : "Off") +
+                     " Failed: " + message);
+      return;
+    }
+
+    if (lidar_type != robosense::lidar::LidarType::RS_AC1) {
+      success = false;
+      message = "Laser control only supported on RS-AC1";
+      RS_SPDLOG_WARN("Set Laser " + std::string(laser_on ? "On" : "Off") +
+                     " Failed: " + message);
+      return;
+    }
+
+    success = laser_on ? device_manager_ptr->setLaserOn(uuid)
+                        : device_manager_ptr->setLaserOff(uuid);
+    message = success ? (laser_on ? "Laser turned on" : "Laser turned off")
+                       : "Failed to control laser, see log for detail";
+    if (success) {
+      RS_SPDLOG_INFO("Device uuid = " + uuid + ": " + message);
+    } else {
+      RS_SPDLOG_ERROR("Device uuid = " + uuid + ": " + message);
+    }
+  }
+
+#if defined(ROS_FOUND)
+  bool laserControlServiceCallback(std_srvs::SetBool::Request &req,
+                                   std_srvs::SetBool::Response &res) {
+    handleLaserControl(req.data, res.success, res.message);
+    return true; // RPC 本身成功；业务结果看 res.success/res.message
+  }
+#elif defined(ROS2_FOUND)
+  void laserControlServiceCallback(
+      const std::shared_ptr<std_srvs::srv::SetBool::Request> req,
+      std::shared_ptr<std_srvs::srv::SetBool::Response> res) {
+    handleLaserControl(req->data, res->success, res->message);
+  }
+#endif // defined(ROS_ROS2_FOUND)
+
   int initTimestampManager() {
     std::string tmp_topic_prefix = topic_prefix;
     if (!topic_prefix.empty()) {
@@ -1039,6 +1124,8 @@ private:
     pointcloud_ac2_wave2_topic_name =
         topic_prefix + "/rs_lidar/ac2_wave2/points";
     imu_topic_name = topic_prefix + "/rs_imu";
+
+    laser_control_service_name = topic_prefix + "/rs_lidar/set_laser_control";
 
     // JPEG
     jpeg_topic_name = topic_prefix + "/rs_camera/color/image_raw/compressed";
@@ -5417,6 +5504,12 @@ private:
   std::shared_ptr<robosense::device::DeviceManager> device_manager_ptr;
   std::mutex current_device_uuid_mtx;
   std::string current_device_uuid;
+  std::string laser_control_service_name;
+#if defined(ROS_FOUND)
+  ros::ServiceServer laser_control_srv;
+#elif defined(ROS2_FOUND)
+  rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr laser_control_srv;
+#endif // defined(ROS_ROS2_FOUND)
   bool current_device_info_ready = false;
   bool current_device_info_valid = false;
   bool enable_device_factor_send = false;

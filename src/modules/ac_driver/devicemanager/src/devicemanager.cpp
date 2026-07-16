@@ -487,6 +487,38 @@ bool DeviceManager::getDeviceInfo(const std::string &uuid,
   return false;
 }
 
+bool DeviceManager::setLaserOn(const std::string &uuid) {
+  std::lock_guard<std::mutex> lg(_devices_map_mtx);
+  auto iterMap = _devices_map.find(uuid);
+  if (iterMap == _devices_map.end() || iterMap->second.driver_ptr == nullptr) {
+    RS_SPDLOG_ERROR("DeviceManager: Device uuid = " + uuid +
+                    " Not Attach, Can Not Set Laser On !");
+    return false;
+  }
+  if (iterMap->second.lidar_type != robosense::lidar::LidarType::RS_AC1) {
+    RS_SPDLOG_ERROR("DeviceManager: Device uuid = " + uuid +
+                    " Laser Control Only Support RS_AC1 !");
+    return false;
+  }
+  return iterMap->second.driver_ptr->setLaserOn();
+}
+
+bool DeviceManager::setLaserOff(const std::string &uuid) {
+  std::lock_guard<std::mutex> lg(_devices_map_mtx);
+  auto iterMap = _devices_map.find(uuid);
+  if (iterMap == _devices_map.end() || iterMap->second.driver_ptr == nullptr) {
+    RS_SPDLOG_ERROR("DeviceManager: Device uuid = " + uuid +
+                    " Not Attach, Can Not Set Laser Off !");
+    return false;
+  }
+  if (iterMap->second.lidar_type != robosense::lidar::LidarType::RS_AC1) {
+    RS_SPDLOG_ERROR("DeviceManager: Device uuid = " + uuid +
+                    " Laser Control Only Support RS_AC1 !");
+    return false;
+  }
+  return iterMap->second.driver_ptr->setLaserOff();
+}
+
 void DeviceManager::regDeviceEventCallback(
     const RS_DEVICE_EVENT_CALLBACK &event_cb) {
   if (event_cb) {

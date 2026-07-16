@@ -487,6 +487,10 @@ public:
   bool getDeviceInfo(const std::string &uuid,
                      robosense::lidar::DeviceInfo &device_info);
 
+  bool setLaserOn(const std::string &uuid);
+
+  bool setLaserOff(const std::string &uuid);
+
   void regDeviceEventCallback(const RS_DEVICE_EVENT_CALLBACK &event_cb);
 
   void regPointCloudCallback(const RS_DEVICE_POINTCLOUD_CALLBACK &pc_cb);

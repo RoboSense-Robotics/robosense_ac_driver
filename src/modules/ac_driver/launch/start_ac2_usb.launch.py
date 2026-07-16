@@ -22,7 +22,7 @@ def generate_launch_description():
         'rviz2_config.rviz'
     )
 
-    start_rviz_node = DeclareLaunchArgument(
+    declare_start_rviz_node_arg = DeclareLaunchArgument(
         'start_rviz_node',
         default_value='false',
         description='enable rviz display'
@@ -30,6 +30,7 @@ def generate_launch_description():
     start_rviz_node = LaunchConfiguration('start_rviz_node')
         
     return LaunchDescription([
+        declare_start_rviz_node_arg,
         # SetEnvironmentVariable(name='RCUTILS_COLORIZED_OUTPUT', value='1'), 
         Node(
             package='ac_driver',
@@ -54,7 +55,7 @@ def generate_launch_description():
                 'imu_frame_id': "rslidar", 
                 'enable_angle_and_device_calib_info_from_device': True, 
                 'angle_calib_basic_dir_path': "", # angle_calib_dir_path: 表示install路径下的conf/angle  
-                'enable_device_calib_info_from_device_pripority': False,
+                'enable_device_calib_info_from_device_pripority': True,
                 'device_calib_file_path': "",     # calib_file_path: 表示install路径下的conf/calibration.yaml
                 'device_manager_debug': False,
                 'enable_use_lidar_clock': False, 

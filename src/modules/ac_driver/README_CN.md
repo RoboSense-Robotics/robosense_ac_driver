@@ -364,6 +364,32 @@ ac_driver节点依赖以下关键的库和软件包:
     * ROS2 非零拷贝模式消息类型: sensor_msgs/msg/Image
     * ROS   消息类型: sensor_msgs/Image 
 
+### 4.3 服务(Service)名称和类型说明
+
+1. 激光开关控制 Service (仅支持 RS-AC1):
+
+   - 服务名称: `<topic_prefix>/rs_lidar/set_laser_control`（`topic_prefix` 默认为空字符串，即默认服务名为 `/rs_lidar/set_laser_control`）
+   - ROS2 服务类型: `std_srvs/srv/SetBool`
+   - ROS  服务类型: `std_srvs/SetBool`
+   - 请求参数: `data`(bool) —— `true` 表示开启激光发射，`false` 表示关闭激光发射
+   - 响应参数: `success`(bool) —— 操作是否成功；`message`(string) —— 结果描述
+   - 使用限制:
+     - 仅支持 RS-AC1 设备，AC2 设备调用会返回 `success=false`
+     - 需先成功打开设备后才能调用，未打开设备时返回 `success=false`
+     - 关闭激光发射不会重启雷达，USB/UVC/IMU 数据流不受影响；重新开启激光后点云约 1 秒内恢复
+
+   调用示例:
+
+   ```bash
+   # ROS2
+   ros2 service call /rs_lidar/set_laser_control std_srvs/srv/SetBool "{data: false}"  # 关闭激光
+   ros2 service call /rs_lidar/set_laser_control std_srvs/srv/SetBool "{data: true}"   # 开启激光
+
+   # ROS
+   rosservice call /rs_lidar/set_laser_control "data: false"
+   rosservice call /rs_lidar/set_laser_control "data: true"
+   ```
+
 ## 5. 注意事项
 ### 5.1 零拷贝使用限制
 - 和ROS2的publisher/subscriber数据传输方式相比，使用零拷贝传输存在以下限制：

@@ -22,7 +22,7 @@ def generate_launch_description():
         'rviz2_config.rviz'
     )
 
-    start_rviz_node = DeclareLaunchArgument(
+    declare_start_rviz_node_arg = DeclareLaunchArgument(
         'start_rviz_node',
         default_value='false',
         description='enable rviz display'
@@ -30,6 +30,7 @@ def generate_launch_description():
     start_rviz_node = LaunchConfiguration('start_rviz_node')
         
     return LaunchDescription([
+        declare_start_rviz_node_arg,
         # SetEnvironmentVariable(name='RCUTILS_COLORIZED_OUTPUT', value='1'), 
         Node(
             package='ac_driver',
@@ -156,6 +157,7 @@ def generate_launch_description():
         Node(
             package='rviz2',
             executable='rviz2',
+            condition=IfCondition(start_rviz_node),
             name='rviz2',
             arguments=['-d', rviz_config_file],
             output='screen'

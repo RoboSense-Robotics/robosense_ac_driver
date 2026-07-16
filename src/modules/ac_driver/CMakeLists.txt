@@ -70,13 +70,14 @@ if(ROS_VERSION EQUAL 1)
   find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
+  std_srvs
   sensor_msgs
   robosense_msgs
   )
   add_definitions(-DROS_FOUND)
 
   catkin_package(
-    CATKIN_DEPENDS roscpp std_msgs sensor_msgs robosense_msgs
+    CATKIN_DEPENDS roscpp std_msgs std_srvs sensor_msgs robosense_msgs
   )
 
   # Specify additional locations of header files
@@ -86,6 +87,7 @@ elseif(ROS_VERSION EQUAL 2)
   find_package(ament_cmake REQUIRED)
   find_package(sensor_msgs REQUIRED)
   find_package(std_msgs REQUIRED)
+  find_package(std_srvs REQUIRED)
   find_package(robosense_msgs REQUIRED)
   add_definitions(-DROS2_FOUND)
 else()
@@ -248,7 +250,7 @@ target_link_libraries(ms_node ${SS_LIBRARY} ${YAML_CPP_LIBRARIES})
 if(ROS_VERSION EQUAL 1)
   target_link_libraries(ms_node ${catkin_LIBRARIES}) 
 elseif(ROS_VERSION EQUAL 2)
-  ament_target_dependencies(ms_node rclcpp sensor_msgs robosense_msgs)
+  ament_target_dependencies(ms_node rclcpp sensor_msgs robosense_msgs std_srvs)
 endif() 
 target_link_libraries(ms_node ${LZMA_LIBRARY})
 target_link_libraries(ms_node ${M_LIBRARY})

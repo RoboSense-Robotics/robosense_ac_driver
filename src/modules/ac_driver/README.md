@@ -318,6 +318,32 @@ This custom ROS2 package defines the message formats for H.265 compressed images
     * ROS2 message type: sensor_msgs/msg/Image
     * ROS   message type: sensor_msgs/Image 
 
+### 4.3 Service
+
+1. Laser Emission Control Service (RS-AC1 only):
+
+   - Service name: `<topic_prefix>/rs_lidar/set_laser_control` (`topic_prefix` defaults to an empty string, so the default service name is `/rs_lidar/set_laser_control`)
+   - ROS2 service type: `std_srvs/srv/SetBool`
+   - ROS  service type: `std_srvs/SetBool`
+   - Request field: `data`(bool) — `true` turns the laser emission on, `false` turns it off
+   - Response fields: `success`(bool) — whether the operation succeeded; `message`(string) — result description
+   - Constraints:
+     - Only supported on RS-AC1 devices; calling it on an AC2 device returns `success=false`
+     - The device must already be opened; otherwise `success=false` is returned
+     - Turning the laser off does not reboot the LiDAR, so the USB/UVC/IMU data streams are not interrupted; after turning it back on, the point cloud recovers within about 1 second
+
+   Example usage:
+
+   ```bash
+   # ROS2
+   ros2 service call /rs_lidar/set_laser_control std_srvs/srv/SetBool "{data: false}"  # turn laser off
+   ros2 service call /rs_lidar/set_laser_control std_srvs/srv/SetBool "{data: true}"   # turn laser on
+
+   # ROS
+   rosservice call /rs_lidar/set_laser_control "data: false"
+   rosservice call /rs_lidar/set_laser_control "data: true"
+   ```
+
 ## 5. Limitations
 
 ### 5.1 Zero-Copy Usage Limitations

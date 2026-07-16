@@ -4,7 +4,11 @@
 
 ## 1. Introduction
 
-`robosense_ac_driver` is a ROS/ROS2-based driver package designed to support RoboSense AC1/AC2 sensors. It provides device drivers along with functionalities for compressing and decompressing associated camera image messages.
+`robosense_ac_driver` is a ROS/ROS2-based driver package designed to support RoboSense AC1/AC2 sensors. 
+
+- Provide device drivers: *Section 4.1*
+- Achieve sensor data reading and processing: distortion removal, sending calibration parameters, JPEG compression, zero-copy/non-zero-copy data transmission
+- ROS2 Docker Image: A Docker container for cross-platform and local compilation environments (only supports ROS 2 Humble), featuring container management, image management, and automated environment setup. For details, please refer to [tools/compilation_envirment/README_CN.md](/tools/compilation_envirment/README_CN.md) in the current directory
 
 ## 2. Prerequisites
 
@@ -68,7 +72,7 @@ After connection, verify device recognition using `lsusb` You should see an entr
 >
 > For systems with a desktop environment, you may optionally install a graphical tool like `usbview`.
 
-## 5. Build
+## 5. Build ac_driver
 
 Open a new terminal window and change the current directory to the root of your workspace containing the `ac_driver` source code:
 
@@ -100,7 +104,7 @@ rm -rf build/ devel/  # (Optional) Clean previous build files
 catkin_make
 ```
 
-## 6. Run
+## 6. Run ac_driver
 
 Once `ac_driver` has been successfully built, you can launch the node. Execute the corresponding command based on your ROS version.
 
@@ -109,13 +113,15 @@ Once `ac_driver` has been successfully built, you can launch the node. Execute t
 - For AC1:
 ```bash
 source install/setup.bash
-ros2 launch ac_driver start_ac1.launch.py
+ros2 launch ac_driver start_ac1.launch.py start_rviz_node:=false|true 
 ```
 
 - For AC2:
 ```bash
 source install/setup.bash
-ros2 launch ac_driver start_ac2_usb.launch.py
+ros2 launch ac_driver start_ac2_usb.launch.py start_rviz_node:=false|true 
+or 
+ros2 launch ac_driver start_ac2_gmsl.launch.py start_rviz_node:=false|true 
 ```
 
 ### ROS
@@ -123,60 +129,18 @@ ros2 launch ac_driver start_ac2_usb.launch.py
 - For AC1:
 ```bash
 source devel/setup.bash
-roslaunch ac_driver start_ac1.launch
+roslaunch ac_driver start_ac1.launch start_rviz_node:=false|true 
 ```
 
 - For AC2:
 ```bash
 source devel/setup.bash
-roslaunch ac_driver start_ac2_usb.launch
+roslaunch ac_driver start_ac2_usb.launch start_rviz_node:=false|true 
+or 
+roslaunch ac_driver start_ac2_gmsl.launch start_rviz_node:=false|true 
 ```
 
-## 7. Multi-Device 
-
-If multiple AC sensors need to be used simultaneously, please ensure that the USB connection of each device is stable. Open as many terminals as there are AC sensors, and then run the corresponding startup files in each terminal.
-
-### For ROS Users
-
-It is recommended that each AC corresponds to a startup file. A new startup file can be created by copying the existing `start_ac2_usb.launch` file,
-
-```bash
-cp src/modules/ac_driver/launch/start_ac2_usb.launch src/modules/ac_driver/launch/start_ac2_usb_sn30.launch
-cp src/modules/ac_driver/launch/start_ac2_usb.launch src/modules/ac_driver/launch/start_ac2_usb_sn31.launch
-```
-
-Then modify the following parameters respectively to distinguish the data streams of different devices,
-
-```xml
-<node name="ms_node_xxx" pkg="ac_driver" type="ms_node" output="screen">
-<param name="topic_prefix" value="" />
-<param name="serial_number" value="" />
-```
-
-Replace `ms_node_xxx` with different node names, such as `ms_node_sn30`, `ms_node_sn31`, etc.
-
-### For ROS2 Users
-
-Similarly, each AC corresponds to a startup file, which can be created by copying the existing `start_ac2_usb.launch.py` file,
-
-```bash
-cp src/modules/ac_driver/launch/start_ac2_usb.launch.py src/modules/ac_driver/launch/start_ac2_usb_sn30.launch.py
-cp src/modules/ac_driver/launch/start_ac2_usb.launch.py src/modules/ac_driver/launch/start_ac2_usb_sn31.launch.py
-```
-
-Then modify the following parameters respectively to distinguish the data streams of different devices,
-
-```python
-'topic_prefix': "",
-'serial_number': "",
-```
-
-|   Parameter   |                          Description                                 |
-| ------------- | -------------------------------------------------------------------- |
-| topic_prefix  | Topic prefix (customizable).                                         |
-| serial_number | Enter the actual serial number of the specific AC sensor being used. |
-
-## 8. Topic Name And Data Type 
+## 7. Topic Name And Data Type 
 
 > 💡 Note: In the table below, each "Topic Type" row contains the ROS2 format first, followed by the ROS format.
 
@@ -203,3 +167,13 @@ For AC2
 | `/rs_camera/right/rect/color/image_raw/compressed` | `sensor_msgs/msg/CompressedImage` <br> `sensor_msgs/CompressedImage` | Compressed version of rectified right camera image data |
 | `/rs_lidar/points`                                 | `sensor_msgs/msg/PointCloud2` <br> `sensor_msgs/PointCloud2`         | Point cloud data with frame_id as rslidar |
 | `/rs_imu`                                          | `sensor_msgs/msg/Imu` <br> `sensor_msgs/Imu`                         | IMU (Inertial Measurement Unit) data |
+
+## 8. Service Name And Data Type
+
+> 💡 Note: In the table below, each "Service Type" row contains the ROS2 format first, followed by the ROS format.
+
+| Service Name                   | Service Type                                   | Description |
+|---------------------------------|------------------------------------------------|--------------|
+| `/rs_lidar/set_laser_control`  | `std_srvs/srv/SetBool` <br> `std_srvs/SetBool` | Controls laser emission on/off (RS-AC1 only)<br>Request field `data`: `true` turns the laser on, `false` turns it off<br>response fields `success`/`message` report the result |
+
+> Details can be found at [AC Driver README.md](src/modules/ac_driver/README.md#43-service)
